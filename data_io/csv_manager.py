@@ -1,10 +1,10 @@
 import csv
 import os
 import sys
-from typing import Dict, List
+from typing import Dict
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models import Participant, SectionState
+from models import Participant
 
 def load_participants_from_csv(file_path: str) -> Dict[str, Participant]:
     participants = {}
@@ -44,28 +44,3 @@ def load_participants_from_csv(file_path: str) -> Dict[str, Participant]:
             participants[p_id] = participant
     return participants
 
-def save_plan_to_csv(plan: List[SectionState], participants: Dict[str, Participant], output_path: str):
-    """
-    計算結果をCSVファイルとして保存します。
-    """
-    with open(output_path, mode='w', encoding='utf-8-sig', newline='') as f:
-        writer = csv.writer(f)
-        # ヘッダー
-        writer.writerow(['区間', 'ランナー', '車ID', '車種', '運転手', '同乗者'])
-        
-        for section in plan:
-            runners = ", ".join([participants[pid].name for pid in section.runner_ids])
-            for car in section.cars:
-                driver_name = participants[car.driver_id].name if car.driver_id in participants else "エラー"
-                passengers = ", ".join([participants[pid].name for pid in car.passenger_ids])
-                car_type = "大型" if car.car_id in ["1", "2", "3", "4"] else "普通"
-                
-                writer.writerow([
-                    f"{section.section_id}区",
-                    runners,
-                    car.car_id,
-                    car_type,
-                    driver_name,
-                    passengers
-                ])
-    print(f"✅ CSVファイル '{output_path}' を作成しました。")
