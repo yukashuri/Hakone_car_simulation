@@ -15,3 +15,10 @@ token.json
 
 # Mac特有のファイル
 .DS_Store
+
+# 生成ファイル
+hakone_result.csv
+
+# データ・ツール
+hakone_simulation_data_2025.csv
+get-pip.py

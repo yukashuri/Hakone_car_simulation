@@ -1,0 +1,34 @@
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+@dataclass
+class Participant:
+    id: str
+    name: str
+    preferred_sections: List[bool]
+    can_drive: bool
+    can_drive_large: bool
+    can_drive_mountain: bool
+    staying_overnight: bool
+    grade: int
+    remaining_sections: int = 0
+    leaves_after_section: Optional[int] = None  # 日帰りの人がこの区間まで参加して離脱する(Noneなら最後まで参加)
+
+@dataclass
+class CarState:
+    car_id: str
+    driver_id: str
+    passenger_ids: List[str] = field(default_factory=list)
+    is_mountain_goer: bool = False # 💡 ここを追加！
+    car_type: str = "normal"  # "large" or "normal"
+    group: Optional[str] = None  # "hotel" or "mountain"（9・10区のみ使用）
+
+    @property
+    def total_people(self) -> int:
+        return 1 + len(self.passenger_ids)
+
+@dataclass
+class SectionState:
+    section_id: int
+    runner_ids: List[str]
+    cars: List[CarState]
