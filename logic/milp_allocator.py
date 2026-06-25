@@ -401,9 +401,9 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
     prob_a, ctx_a = _build_block_a(participants)
     status_a = _solve(prob_a)
     print(f"Block A (1〜8区) 最適化ステータス: {status_a}")
-    if status_a not in ("Optimal", "Not Solved") or ctx_a["rent"][ALL_CAR_IDS[0]].value() is None:
+    if status_a not in ("Optimal", "Feasible"):
         raise RuntimeError(f"Block A(1〜8区)が解けませんでした: {status_a}")
-    if status_a == "Not Solved":
+    if status_a == "Feasible":
         print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
 
     sections_a, rent_solution, runs_used_in_a = _extract_block_a(ctx_a, participants)
@@ -411,16 +411,20 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
     prob_b, ctx_b = _build_block_b(participants, rent_solution, runs_used_in_a)
     status_b = _solve(prob_b)
     print(f"Block B (9〜10区) 最適化ステータス: {status_b}")
-    if status_b not in ("Optimal", "Not Solved"):
+    if status_b not in ("Optimal", "Feasible"):
         raise RuntimeError(f"Block B(9〜10区)が解けませんでした: {status_b}")
+    if status_b == "Feasible":
+        print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
 
     sections_b = _extract_block_b(ctx_b, participants)
 
     prob_c, ctx_c = _build_return_trip(participants, rent_solution)
     status_c = _solve(prob_c)
     print(f"帰路 最適化ステータス: {status_c}")
-    if status_c not in ("Optimal", "Not Solved"):
+    if status_c not in ("Optimal", "Feasible"):
         raise RuntimeError(f"帰路の割り当てが解けませんでした: {status_c}")
+    if status_c == "Feasible":
+        print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
     section_c = _extract_return_trip(ctx_c, participants)
 
     plan = sections_a + sections_b + [section_c]
