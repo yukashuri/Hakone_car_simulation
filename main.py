@@ -1,4 +1,7 @@
+import argparse
+
 from data_io.csv_manager import load_participants_from_csv
+from data_io.sheets_manager import load_participants_from_sheet, save_plan_to_sheet
 from logic.allocator import generate_full_plan
 from logic.milp_allocator import generate_full_plan_milp
 from logic.car_pool import section_label
@@ -6,15 +9,28 @@ from logic.car_pool import section_label
 USE_MILP = True  # True: PuLPによる最適化, False: 既存の貪欲ヒューリスティック
 
 def main():
+    parser = argparse.ArgumentParser(description="箱根駅伝配車シミュレーション")
+    parser.add_argument("--url", help="入力データのGoogle SpreadsheetのURL")
+    parser.add_argument("--credentials", default="credentials.json", help="サービスアカウントのJSONキーのパス")
+    args = parser.parse_args()
+
     print("=== 箱根駅伝シミュレーションを開始します ===")
-    
+
     # 1. データの読み込み
-    csv_path = "hakone_simulation_data_2025.csv"
-    try:
-        participants = load_participants_from_csv(csv_path)
-    except FileNotFoundError:
-        print(f"❌ エラー: {csv_path} が見つかりません。")
-        return
+    if args.url:
+        print(f"Google Spreadsheetからデータを読み込み中...")
+        try:
+            participants = load_participants_from_sheet(args.url, args.credentials)
+        except Exception as e:
+            print(f"❌ エラー: スプレッドシートの読み込みに失敗しました。\n  {e}")
+            return
+    else:
+        csv_path = "hakone_simulation_data_2025.csv"
+        try:
+            participants = load_participants_from_csv(csv_path)
+        except FileNotFoundError:
+            print(f"❌ エラー: {csv_path} が見つかりません。")
+            return
 
     # 2. 配車アルゴリズムの実行
     print("\n--- 配車計画の計算を開始します ---")
@@ -49,7 +65,16 @@ def main():
             print(f"      👨‍✈️ 運転手: {driver_name}")
             print(f"      👥 同乗者: {', '.join(passengers) if passengers else 'なし'}")
     print("\n✅ 全区間の出力が完了しました！")
-    print(f"\n✅ すべての処理が完了しました！ 'hakone_result.csv' を確認してください。")
+
+    if args.url:
+        print("\n--- 結果をGoogle Spreadsheetに書き出し中 ---")
+        try:
+            result_url = save_plan_to_sheet(plan, participants, args.credentials)
+            print(f"\n✅ すべての処理が完了しました！ 結果のスプレッドシート:\n  {result_url}")
+        except Exception as e:
+            print(f"❌ エラー: スプレッドシートへの書き出しに失敗しました。\n  {e}")
+    else:
+        print(f"\n✅ すべての処理が完了しました！ 'hakone_result.csv' を確認してください。")
 
 if __name__ == "__main__":
     main()
