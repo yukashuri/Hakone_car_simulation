@@ -111,8 +111,8 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
                 if 0 <= idx < 10:
                     preferred[idx] = True
 
-        grade_str = get(col_grade).replace("年生", "")
-        grade = int(grade_str) if grade_str.isdigit() else 1
+        grade_match = re.match(r"(\d+)", get(col_grade))
+        grade = int(grade_match.group(1)) if grade_match else 1
 
         count_str = get(col_count)
         remaining = int(count_str) if count_str.isdigit() else preferred.count(True)
