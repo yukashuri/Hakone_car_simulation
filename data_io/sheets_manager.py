@@ -65,15 +65,23 @@ def load_participants_from_sheet(url: str, credentials_path: str = CREDENTIALS_D
     return participants
 
 
+RESULT_SHEET_NAME = "配車結果"
+
+
 def save_plan_to_sheet(
     plan: List[SectionState],
     participants: Dict[str, Participant],
+    url: str,
     credentials_path: str = CREDENTIALS_DEFAULT,
 ) -> str:
     gc = _client(credentials_path)
-    spreadsheet = gc.create("hakone_result")
-    sheet = spreadsheet.sheet1
-    sheet.update_title("配車結果")
+    spreadsheet = gc.open_by_key(_sheet_id_from_url(url))
+
+    # 既存の「配車結果」シートがあれば削除して作り直す
+    existing = next((ws for ws in spreadsheet.worksheets() if ws.title == RESULT_SHEET_NAME), None)
+    if existing:
+        spreadsheet.del_worksheet(existing)
+    sheet = spreadsheet.add_worksheet(title=RESULT_SHEET_NAME, rows=500, cols=7)
 
     rows = [["区間", "ランナー", "車ID", "車種", "山行き", "運転手", "同乗者"]]
     for section in plan:
@@ -86,8 +94,4 @@ def save_plan_to_sheet(
             rows.append([section_label(section.section_id), runners, car.car_id, car_type, is_mt, driver_name, passengers])
 
     sheet.update(rows, "A1")
-
-    # サービスアカウントのDriveに作られるので、リンクを知っている全員が閲覧できるよう共有
-    spreadsheet.share(None, perm_type="anyone", role="reader")
-
     return spreadsheet.url

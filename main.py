@@ -69,7 +69,7 @@ def main():
     if args.url:
         print("\n--- 結果をGoogle Spreadsheetに書き出し中 ---")
         try:
-            result_url = save_plan_to_sheet(plan, participants, args.credentials)
+            result_url = save_plan_to_sheet(plan, participants, args.url, args.credentials)
             print(f"\n✅ すべての処理が完了しました！ 結果のスプレッドシート:\n  {result_url}")
         except Exception as e:
             print(f"❌ エラー: スプレッドシートへの書き出しに失敗しました。\n  {e}")
