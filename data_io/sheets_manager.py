@@ -32,6 +32,11 @@ def _int_or(val, default: int) -> int:
     return int(s) if s else default
 
 
+def _find_col(headers: List[str], keyword: str) -> str:
+    """キーワードを含む列名を返す。見つからなければ空文字。"""
+    return next((h for h in headers if keyword in h), "")
+
+
 def load_participants_from_sheet(url: str, credentials_path: str = CREDENTIALS_DEFAULT) -> Dict[str, Participant]:
     gc = _client(credentials_path)
     sheet = gc.open_by_key(_sheet_id_from_url(url)).sheet1
@@ -62,6 +67,78 @@ def load_participants_from_sheet(url: str, credentials_path: str = CREDENTIALS_D
             remaining_sections=_int_or(row.get("希望区間数", 0), 0),
             leaves_after_section=leaves_after_section,
         )
+    return participants
+
+
+def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTIALS_DEFAULT) -> Dict[str, Participant]:
+    """Googleフォームの回答スプレッドシートからParticipantを読み込む。"""
+    gc = _client(credentials_path)
+    all_values = gc.open_by_key(_sheet_id_from_url(url)).sheet1.get_all_values()
+
+    if len(all_values) < 2:
+        raise ValueError("フォームの回答が0件です。")
+
+    headers = all_values[0]
+    col_name     = _find_col(headers, "お名前")
+    col_grade    = _find_col(headers, "学年")
+    col_sections = _find_col(headers, "走りたい区間")
+    col_count    = _find_col(headers, "何区間")
+    col_drive    = _find_col(headers, "普通自動車")
+    col_large    = _find_col(headers, "大型")
+    col_mountain = _find_col(headers, "山道")
+    col_stay     = _find_col(headers, "宿泊")
+    col_leave    = _find_col(headers, "帰りますか")
+
+    participants = {}
+    p_index = 0
+    for row_vals in all_values[1:]:
+        if not any(row_vals):
+            continue
+        row = dict(zip(headers, row_vals))
+
+        def get(col: str) -> str:
+            return str(row.get(col, "")).strip()
+
+        def yes(col: str) -> bool:
+            return get(col).startswith("はい")
+
+        # 走りたい区間: "1区, 3区, 10区" → [True, False, True, ..., True]
+        preferred = [False] * 10
+        for item in get(col_sections).split(","):
+            item = item.strip().replace("区", "")
+            if item.isdigit():
+                idx = int(item) - 1
+                if 0 <= idx < 10:
+                    preferred[idx] = True
+
+        grade_str = get(col_grade).replace("年生", "")
+        grade = int(grade_str) if grade_str.isdigit() else 1
+
+        count_str = get(col_count)
+        remaining = int(count_str) if count_str.isdigit() else preferred.count(True)
+
+        leave_str = get(col_leave).replace("区", "")
+        leaves_after = int(leave_str) if leave_str.isdigit() else None
+
+        is_large    = yes(col_large)
+        is_mountain = yes(col_mountain)
+        is_drive    = yes(col_drive) or is_large or is_mountain
+
+        p_index += 1
+        p_id = f"p{p_index}"
+        participants[p_id] = Participant(
+            id=p_id,
+            name=get(col_name),
+            preferred_sections=preferred,
+            can_drive=is_drive,
+            can_drive_large=is_large,
+            can_drive_mountain=is_mountain,
+            staying_overnight=yes(col_stay),
+            grade=grade,
+            remaining_sections=remaining,
+            leaves_after_section=leaves_after,
+        )
+
     return participants
 
 

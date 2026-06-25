@@ -7,7 +7,11 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from data_io.sheets_manager import load_participants_from_sheet, save_plan_to_sheet
+from data_io.sheets_manager import (
+    load_participants_from_form_sheet,
+    load_participants_from_sheet,
+    save_plan_to_sheet,
+)
 from logic.milp_allocator import generate_full_plan_milp
 from logic.car_pool import section_label
 
@@ -15,6 +19,17 @@ CREDENTIALS_PATH = "credentials.json"
 
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
+
+input_format = st.radio(
+    "入力データの形式",
+    ["Googleフォームの回答", "独自フォーマット"],
+    horizontal=True,
+)
+
+if input_format == "Googleフォームの回答":
+    st.caption("Googleフォームの回答が集まったスプレッドシートのURLを貼り付けてください。")
+else:
+    st.caption("所定のフォーマット（名前・1〜10・運転・大・山・宿泊・学年・希望区間数・離脱区間）のスプレッドシートのURLを貼り付けてください。")
 
 url = st.text_input(
     "スプレッドシートのURL",
@@ -28,10 +43,15 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
     with st.spinner("データを読み込み中..."):
         try:
             with contextlib.redirect_stdout(log_buf):
-                participants = load_participants_from_sheet(url, CREDENTIALS_PATH)
+                if input_format == "Googleフォームの回答":
+                    participants = load_participants_from_form_sheet(url, CREDENTIALS_PATH)
+                else:
+                    participants = load_participants_from_sheet(url, CREDENTIALS_PATH)
         except Exception as e:
             st.error(f"スプレッドシートの読み込みに失敗しました。\n\n{e}")
             st.stop()
+
+    st.info(f"参加者 {len(participants)} 名のデータを読み込みました。")
 
     with st.spinner("配車を計算中（数十秒かかる場合があります）..."):
         try:
