@@ -281,6 +281,12 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         runners_s = [runs[(p, s)] for p in pids if (p, s) in runs]
         prob += pulp.lpSum(runners_s) >= 1  # 9区・10区も最低1人は走者を確保
 
+    # 10区終了後に山グループ全員が山行き車で帰れる容量を確保
+    prob += (
+        pulp.lpSum(mtn[p] for p in pids)
+        <= pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
+    )
+
     prob += (
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
@@ -295,8 +301,19 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
 
 def _extract_block_b(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
-    runs, drive, ride, usedcar = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"]
+    runs, drive, ride, usedcar, mtn, mtn_car = (
+        ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["mtn"], ctx["mtn_car"]
+    )
     rented_cars = ctx["rented_cars"]
+
+    mountain_group = [p for p in pids if _val(mtn[p]) == 1]
+    mountain_cars_used = [k for k in rented_cars if _val(mtn_car[k]) == 1]
+    total_capacity = sum(CAR_CAPACITY[k] for k in mountain_cars_used)
+    names = ", ".join(participants[p].name for p in mountain_group)
+    print(
+        f"  ⛰️ 山グループ: {len(mountain_group)}名 / 山行き車定員合計: {total_capacity}名"
+        f"  ({names})"
+    )
 
     sections_state: List[SectionState] = []
     for s in sections:
