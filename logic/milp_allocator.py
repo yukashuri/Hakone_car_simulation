@@ -96,12 +96,12 @@ def _build_block_a(participants: Dict[str, Participant]):
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
-            if s not in (7, 8):
-                # 7〜8区は山行き車がドライバー1人だけになることを許可するため下限なし
+            if s != 8:
+                # 8区は山行き車がドライバー1人だけになることを許可するため下限なし
                 prob += pulp.lpSum(riders_ks) >= usedcar[(k, s)]
 
             grade2_riders = [ride[(p, k, s)] for p in pids if participants[p].grade >= 2 and (p, k, s) in ride]
-            if s not in (7, 8):
+            if s != 8:
                 prob += pulp.lpSum(grade2_riders) >= usedcar[(k, s)]
 
         for p in pids:
@@ -155,17 +155,16 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += occ[(p_mtn, k, 6)] + occ[(p_run, k, 6)] + runs[(p_run, 5)] <= 2
 
-    # 7〜8区: 山行き希望者が乗る車に非山行き者を同乗客（ride）として乗せない
+    # 8区: 山行き希望者が乗る車に非山行き者を同乗客（ride）として乗せない
     # ドライバーは非山行き者でもOK（誰かが山まで運転する必要があるため）
-    for s in [7, 8]:
-        for k in ALL_CAR_IDS:
-            for p_mtn in mountain_hopefuls:
-                for p_other in non_mountain:
-                    prob += ride[(p_other, k, s)] + occ[(p_mtn, k, s)] <= 1
+    for k in ALL_CAR_IDS:
+        for p_mtn in mountain_hopefuls:
+            for p_other in non_mountain:
+                prob += ride[(p_other, k, 8)] + occ[(p_mtn, k, 8)] <= 1
 
-    # 7〜8区: 山を走る予定の人（山道免許なし）はドライバーにしない（体力温存）
+    # 8区: 山を走る予定の人（山道免許なし）はドライバーにしない（体力温存）
     mountain_runners = [p for p in mountain_hopefuls if not participants[p].can_drive_mountain]
-    for s in [7, 8]:
+    for s in [8]:
         for k in ALL_CAR_IDS:
             for p_run in mountain_runners:
                 if (p_run, k, s) in drive:
