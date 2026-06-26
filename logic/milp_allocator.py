@@ -96,10 +96,13 @@ def _build_block_a(participants: Dict[str, Participant]):
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
-            prob += pulp.lpSum(riders_ks) >= usedcar[(k, s)]
+            if s not in (7, 8):
+                # 7〜8区は山行き車がドライバー1人だけになることを許可するため下限なし
+                prob += pulp.lpSum(riders_ks) >= usedcar[(k, s)]
 
             grade2_riders = [ride[(p, k, s)] for p in pids if participants[p].grade >= 2 and (p, k, s) in ride]
-            prob += pulp.lpSum(grade2_riders) >= usedcar[(k, s)]
+            if s not in (7, 8):
+                prob += pulp.lpSum(grade2_riders) >= usedcar[(k, s)]
 
         for p in pids:
             if not _present(participants, p, s):
