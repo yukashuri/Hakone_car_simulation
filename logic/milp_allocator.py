@@ -279,12 +279,20 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
 
     for s in sections:
         runners_s = [runs[(p, s)] for p in pids if (p, s) in runs]
-        prob += pulp.lpSum(runners_s) >= 1  # 9区・10区も最低1人は走者を確保
+        if runners_s:  # runs変数がゼロだとinfeasibleになるためスキップ
+            prob += pulp.lpSum(runners_s) >= 1  # 9区・10区も最低1人は走者を確保
 
-    # 10区終了後に山グループ全員が山行き車で帰れる容量を確保
+    # 山グループ全員が山行き車に収まること（行きの最大乗車時 = 10区終了後の帰り）
     prob += (
         pulp.lpSum(mtn[p] for p in pids)
         <= pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
+    )
+
+    # ホテルグループ（非山行き）が非山行き車に収まること
+    total_rented_cap = sum(CAR_CAPACITY[k] for k in rented_cars)
+    prob += (
+        len(pids) - pulp.lpSum(mtn[p] for p in pids)
+        <= total_rented_cap - pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
     )
 
     prob += (

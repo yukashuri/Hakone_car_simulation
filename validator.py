@@ -23,15 +23,28 @@ def validate_section(state: SectionState, participants: Dict[str, Participant]) 
 
         if not driver.can_drive: errors.append(f"車{car.car_id}の{driver.name}は免許なし")
 
-        # 💡【修正】フラグがついている車だけ山道免許をチェック
         if state.section_id in MOUNTAIN_SECTIONS and car.is_mountain_goer:
             if not driver.can_drive_mountain:
                 errors.append(f"{state.section_id}区の山行き車両({car.car_id})ですが、{driver.name}は山道免許なし")
+
+        if car.driver_id in all_runners:
+            errors.append(f"車{car.car_id}の運転手{driver.name}は同時にランナーです")
+
+        for pid in car.passenger_ids:
+            if pid in all_runners:
+                name = participants[pid].name if pid in participants else pid
+                errors.append(f"車{car.car_id}の同乗者{name}は同時にランナーです")
 
         if len(car.passenger_ids) == 0: errors.append(f"車{car.car_id}に同乗者なし")
         else:
             if not any(participants[pid].grade >= 2 for pid in car.passenger_ids if pid in participants):
                 errors.append(f"車{car.car_id}に2年生以上なし")
+
+    driver_list = [car.driver_id for car in state.cars]
+    for d_id in set(driver_list):
+        if driver_list.count(d_id) > 1:
+            name = participants[d_id].name if d_id in participants else d_id
+            errors.append(f"{name}が複数の車で同時にドライバーになっています")
 
     return errors
 
