@@ -160,7 +160,7 @@ def save_plan_to_sheet(
         spreadsheet.del_worksheet(existing)
     sheet = spreadsheet.add_worksheet(title=RESULT_SHEET_NAME, rows=500, cols=7)
 
-    rows = [["区間", "ランナー", "車ID", "車種", "山行き", "運転手", "同乗者"]]
+    rows = [["区間", "ランナー", "車ID", "車種", "山行き", "先行", "運転手", "同乗者"]]
     for section in plan:
         runners = ", ".join(participants[pid].name for pid in section.runner_ids if pid in participants)
         for car in section.cars:
@@ -168,7 +168,8 @@ def save_plan_to_sheet(
             passengers = ", ".join(participants[pid].name for pid in car.passenger_ids if pid in participants)
             car_type = "大型" if car.car_type == "large" else "普通"
             is_mt = "★山行き" if car.is_mountain_goer else ""
-            rows.append([section_label(section.section_id), runners, car.car_id, car_type, is_mt, driver_name, passengers])
+            is_adv = "🚀先行" if car.is_advance else ""
+            rows.append([section_label(section.section_id), runners, car.car_id, car_type, is_mt, is_adv, driver_name, passengers])
 
     sheet.update(rows, "A1")
     return spreadsheet.url

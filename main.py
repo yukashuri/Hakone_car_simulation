@@ -57,11 +57,10 @@ def main():
             passengers = [participants[pid].name for pid in car.passenger_ids if pid in participants]
             
             car_type = "大型" if car.car_type == "large" else "普通"
-            
-            # 💡 車自身が知っている「山行きフラグ」を見てアイコンを付ける
             is_mt = " ⛰️[山行き部隊]" if car.is_mountain_goer else ""
-            
-            print(f"  🚘 車{car.car_id} ({car_type}){is_mt} - 乗車人数: 計{car.total_people}人")
+            is_adv = " 🚀[先行]" if car.is_advance else ""
+
+            print(f"  🚘 車{car.car_id} ({car_type}){is_mt}{is_adv} - 乗車人数: 計{car.total_people}人")
             print(f"      👨‍✈️ 運転手: {driver_name}")
             print(f"      👥 同乗者: {', '.join(passengers) if passengers else 'なし'}")
     print("\n✅ 全区間の出力が完了しました！")

@@ -151,7 +151,7 @@ def allocate_single_section(
 def save_plan_to_csv(plan: List[SectionState], participants: Dict[str, Participant], output_path: str):
     with open(output_path, mode='w', encoding='utf-8-sig', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['区間', 'ランナー', '車ID', '車種', '山行き', '運転手', '同乗者'])
+        writer.writerow(['区間', 'ランナー', '車ID', '車種', '山行き', '先行', '運転手', '同乗者'])
         for section in plan:
             runners = ", ".join([participants[pid].name for pid in section.runner_ids])
             for car in section.cars:
@@ -159,7 +159,8 @@ def save_plan_to_csv(plan: List[SectionState], participants: Dict[str, Participa
                 passengers = ", ".join([participants[pid].name for pid in car.passenger_ids])
                 car_type = "大型" if car.car_type == "large" else "普通"
                 is_mt = "★山行き" if car.is_mountain_goer else ""
-                writer.writerow([section_label(section.section_id), runners, car.car_id, car_type, is_mt, driver_name, passengers])
+                is_adv = "🚀先行" if car.is_advance else ""
+                writer.writerow([section_label(section.section_id), runners, car.car_id, car_type, is_mt, is_adv, driver_name, passengers])
     print(f"\n✅ CSVファイル '{output_path}' を作成しました。")
 
 def generate_full_plan(participants: Dict[str, Participant]) -> List[SectionState]:

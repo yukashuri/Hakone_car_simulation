@@ -19,7 +19,8 @@ class CarState:
     car_id: str
     driver_id: str
     passenger_ids: List[str] = field(default_factory=list)
-    is_mountain_goer: bool = False # 💡 ここを追加！
+    is_mountain_goer: bool = False
+    is_advance: bool = False  # 先行車（次走者を乗せて早めに次の中継所へ向かう）
     car_type: str = "normal"  # "large" or "normal"
     group: Optional[str] = None  # "hotel" or "mountain"（9・10区のみ使用）
 
