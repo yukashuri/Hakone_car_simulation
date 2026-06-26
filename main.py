@@ -5,6 +5,7 @@ from data_io.sheets_manager import load_participants_from_sheet, save_plan_to_sh
 from logic.allocator import generate_full_plan
 from logic.milp_allocator import generate_full_plan_milp
 from logic.car_pool import section_label
+from validator import validate_participants, validate_transitions, count_car_changes, compute_runner_satisfaction
 
 USE_MILP = True  # True: PuLPによる最適化, False: 既存の貪欲ヒューリスティック
 
@@ -31,6 +32,13 @@ def main():
         except FileNotFoundError:
             print(f"❌ エラー: {csv_path} が見つかりません。")
             return
+
+    # 1.5 入力データの検証
+    input_warnings = validate_participants(participants)
+    if input_warnings:
+        print("\n⚠️ 入力データに以下の問題があります:")
+        for w in input_warnings:
+            print(f"  • {w}")
 
     # 2. 配車アルゴリズムの実行
     print("\n--- 配車計画の計算を開始します ---")
@@ -65,6 +73,20 @@ def main():
             print(f"      👨‍✈️ 運転手: {driver_name}")
             print(f"      👥 同乗者: {', '.join(passengers) if passengers else 'なし'}")
     print("\n✅ 全区間の出力が完了しました！")
+
+    # 区間をまたいだ車両引き継ぎチェック
+    transition_errors = validate_transitions(plan, participants)
+    if transition_errors:
+        print("\n⚠️ 車両引き継ぎに問題があります:")
+        for err in transition_errors:
+            print(f"  • {err}")
+    changes = count_car_changes(plan)
+    print(f"ℹ️ 区間をまたいで車を乗り換えた回数: {changes}回")
+
+    # ランナー希望充足率
+    n_wanted, n_satisfied, total_wanted, total_ran = compute_runner_satisfaction(plan, participants)
+    print(f"\n📊 ランナー希望充足率: {n_satisfied}/{n_wanted}人が希望区間数を達成")
+    print(f"   走行総区間数: {total_ran}/{total_wanted}区間")
 
     if args.url:
         print("\n--- 結果をGoogle Spreadsheetに書き出し中 ---")

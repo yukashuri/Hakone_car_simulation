@@ -1,6 +1,46 @@
-from typing import List, Dict
+from typing import Dict, List, Tuple
 from models import Participant, SectionState
 from logic.car_pool import MOUNTAIN_SECTIONS, LARGE_CAPACITY, NORMAL_CAPACITY
+
+
+def validate_participants(participants: Dict[str, Participant]) -> List[str]:
+    """参加者データの入力チェック。問題があれば警告メッセージのリストを返す。"""
+    warnings = []
+    for pid, p in participants.items():
+        label = f"{p.name or pid}"
+        if not p.name.strip():
+            warnings.append(f"{pid}: 名前が空欄です")
+        if p.grade < 1 or p.grade > 9:
+            warnings.append(f"{label}: 学年が不正な値です ({p.grade})")
+        if p.remaining_sections < 0:
+            warnings.append(f"{label}: 希望区間数が負です ({p.remaining_sections})")
+        if p.remaining_sections > 10:
+            warnings.append(f"{label}: 希望区間数が10を超えています ({p.remaining_sections})")
+        if p.remaining_sections > 0 and not any(p.preferred_sections):
+            warnings.append(f"{label}: 希望区間数>{0}ですが走りたい区間が未選択です")
+        if p.leaves_after_section is not None and not (1 <= p.leaves_after_section <= 10):
+            warnings.append(f"{label}: 離脱区間が不正です ({p.leaves_after_section})")
+    return warnings
+
+
+def compute_runner_satisfaction(
+    plan: List[SectionState], participants: Dict[str, Participant]
+) -> Tuple[int, int, int, int]:
+    """ランナー希望充足率を計算する。
+    Returns: (希望者数, 希望通り走れた人数, 希望総区間数, 実際の走行総区間数)
+    """
+    actual_runs: Dict[str, int] = {}
+    for section in plan:
+        for pid in section.runner_ids:
+            actual_runs[pid] = actual_runs.get(pid, 0) + 1
+
+    wanted = [(pid, p) for pid, p in participants.items() if p.remaining_sections > 0]
+    satisfied = sum(
+        1 for pid, p in wanted if actual_runs.get(pid, 0) >= p.remaining_sections
+    )
+    total_wanted = sum(p.remaining_sections for _, p in wanted)
+    total_ran = sum(actual_runs.values())
+    return len(wanted), satisfied, total_wanted, total_ran
 
 def validate_section(state: SectionState, participants: Dict[str, Participant]) -> List[str]:
     errors = []

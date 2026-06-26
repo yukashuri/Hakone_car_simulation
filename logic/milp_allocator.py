@@ -210,6 +210,12 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
     rented_cars = [k for k in ALL_CAR_IDS if rent_solution.get(k, 0) == 1]
     mountain_capable = [p for p in pids if participants[p].can_drive_mountain]
 
+    if not mountain_capable:
+        raise RuntimeError(
+            "山道運転可の参加者が見つかりません。"
+            "9・10区の山行き車を運転できる人を少なくとも1人登録してください。"
+        )
+
     prob = pulp.LpProblem("hakone_block_b", pulp.LpMinimize)
 
     mtn = {p: pulp.LpVariable(f"mtn_{p}", cat="Binary") for p in pids}

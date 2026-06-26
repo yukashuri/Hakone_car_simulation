@@ -14,6 +14,7 @@ from data_io.sheets_manager import (
 )
 from logic.milp_allocator import generate_full_plan_milp
 from logic.car_pool import section_label
+from validator import validate_participants, validate_transitions, count_car_changes, compute_runner_satisfaction
 
 CREDENTIALS_PATH = "credentials.json"
 
@@ -53,6 +54,12 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
 
     st.info(f"参加者 {len(participants)} 名のデータを読み込みました。")
 
+    input_warnings = validate_participants(participants)
+    if input_warnings:
+        with st.expander(f"⚠️ 入力データに {len(input_warnings)} 件の問題があります"):
+            for w in input_warnings:
+                st.warning(w)
+
     with st.spinner("配車を計算中（数十秒かかる場合があります）..."):
         try:
             with contextlib.redirect_stdout(log_buf):
@@ -87,6 +94,18 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
                 st.write(f"　👨‍✈️ 運転手: {driver_name}")
                 st.write(f"　👥 同乗者: {', '.join(passengers) if passengers else 'なし'}")
                 st.divider()
+
+    # 区間をまたいだ車両引き継ぎチェック
+    transition_errors = validate_transitions(plan, participants)
+    if transition_errors:
+        st.warning("⚠️ 車両引き継ぎに問題があります: " + " / ".join(transition_errors))
+
+    changes = count_car_changes(plan)
+    n_wanted, n_satisfied, total_wanted, total_ran = compute_runner_satisfaction(plan, participants)
+    col1, col2 = st.columns(2)
+    col1.metric("ランナー希望充足", f"{n_satisfied}/{n_wanted}人", help="希望区間数を達成できた人の割合")
+    col2.metric("走行区間数", f"{total_ran}/{total_wanted}区間", help="実際に走れた区間 / 希望合計")
+    st.caption(f"ℹ️ 区間をまたいで車を乗り換えた回数: {changes}回")
 
     # スプレッドシートへの書き出し
     with st.spinner("スプレッドシートに結果を書き込み中..."):
