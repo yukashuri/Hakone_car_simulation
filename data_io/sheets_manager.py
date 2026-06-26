@@ -13,6 +13,13 @@ CREDENTIALS_DEFAULT = "credentials.json"
 
 
 def _client(credentials_path: str) -> gspread.Client:
+    # Streamlit Cloud 上では st.secrets から読む。ローカルではファイルを使う。
+    try:
+        import streamlit as st
+        if "gcp_service_account" in st.secrets:
+            return gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
+    except Exception:
+        pass
     return gspread.service_account(filename=credentials_path)
 
 

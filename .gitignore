@@ -12,6 +12,7 @@ env/
 credentials.json
 token.json
 .env
+.streamlit/secrets.toml
 
 # Mac特有のファイル
 .DS_Store
