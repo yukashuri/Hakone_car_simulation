@@ -135,6 +135,25 @@ def _build_block_a(participants: Dict[str, Participant]):
                     terms.append(drive[(p, k, s)])
                 occ[(p, k, s)] = pulp.lpSum(terms)
 
+    # 6〜8区: 山行き希望者の乗る車に、直前区間を走り終えたランナーを同乗させない
+    # （山行き組の輸送車が中継所で立ち止まらないようにするため）
+    mountain_hopefuls = [
+        p for p in pids
+        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
+    ]
+    for s in [6, 7, 8]:
+        prev_s = s - 1
+        for k in ALL_CAR_IDS:
+            for p_mtn in mountain_hopefuls:
+                for p_run in pids:
+                    if p_mtn == p_run:
+                        continue
+                    if (p_run, prev_s) not in runs:
+                        continue
+                    # occ[p_mtn,k,s] + occ[p_run,k,s] + runs[p_run,prev_s] <= 2
+                    # → 3つすべてが1になるのを防ぐ
+                    prob += occ[(p_mtn, k, s)] + occ[(p_run, k, s)] + runs[(p_run, prev_s)] <= 2
+
     match_vars = []
     for p in pids:
         for k in ALL_CAR_IDS:

@@ -13,20 +13,17 @@ CREDENTIALS_DEFAULT = "credentials.json"
 
 
 def _client(credentials_path: str) -> gspread.Client:
-    # Streamlit コンテキスト内かどうかを確認（CLIでは st.secrets へのアクセスが例外を出す）
-    _secrets = None
+    # Streamlit Cloud では st.secrets から読む。CLI やローカルではファイルを使う。
     try:
-        import streamlit as st
-        _secrets = st.secrets  # CLI環境ではここで例外が出る
-    except Exception:
-        pass
-
-    if _secrets is not None:
         import json as _json
-        if "credentials_json" in _secrets:
-            return gspread.service_account_from_dict(_json.loads(_secrets["credentials_json"]))
-        if "gcp_service_account" in _secrets:
-            return gspread.service_account_from_dict(dict(_secrets["gcp_service_account"]))
+        import streamlit as st
+        secrets = st.secrets  # SecretsManagerオブジェクトを取得
+        if "credentials_json" in secrets:
+            return gspread.service_account_from_dict(_json.loads(secrets["credentials_json"]))
+        if "gcp_service_account" in secrets:
+            return gspread.service_account_from_dict(dict(secrets["gcp_service_account"]))
+    except Exception:
+        pass  # CLI環境やSecrets未設定の場合はファイルにフォールバック
 
     return gspread.service_account(filename=credentials_path)
 
