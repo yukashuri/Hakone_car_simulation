@@ -167,7 +167,7 @@ def save_plan_to_sheet(
             driver_name = participants[car.driver_id].name if car.driver_id in participants else "エラー"
             passengers = ", ".join(participants[pid].name for pid in car.passenger_ids if pid in participants)
             car_type = "大型" if car.car_type == "large" else "普通"
-            is_mt = "★山行き" if car.is_mountain_goer else ""
+            is_mt = "★山行き" if car.is_mountain_goer else ("🏨ホテル組" if car.group == "hotel" else "")
             is_adv = "🚀先行" if car.is_advance else ""
             rows.append([section_label(section.section_id), runners, car.car_id, car_type, is_mt, is_adv, driver_name, passengers])
 

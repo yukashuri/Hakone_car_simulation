@@ -350,6 +350,78 @@ def _extract_block_b(ctx, participants):
     return sections_state
 
 
+def _assign_hotel_group(ctx_b, participants) -> List[CarState]:
+    """Block Bで山グループに入らなかった人（ホテルグループ）を非山行き車に割り当てる。
+    9区・10区は同じ配車で固定（ホテル滞在中のため移動なし）。"""
+    pids = ctx_b["pids"]
+    rented_cars = ctx_b["rented_cars"]
+    mtn = ctx_b["mtn"]
+    mtn_car = ctx_b["mtn_car"]
+
+    hotel_pids = [p for p in pids if _val(mtn[p]) == 0]
+    hotel_cars = [k for k in rented_cars if _val(mtn_car[k]) == 0]
+
+    if not hotel_pids or not hotel_cars:
+        return []
+
+    drive = {
+        (p, k): pulp.LpVariable(f"driveH_{p}_{k}", cat="Binary")
+        for p in hotel_pids
+        for k in hotel_cars
+        if participants[p].can_drive
+        and not (CAR_TYPE[k] == "large" and not participants[p].can_drive_large)
+    }
+    if not drive:
+        print("  ⚠️ ホテルグループに運転できる人がいないため、ホテル組の配車をスキップします。")
+        return []
+
+    prob = pulp.LpProblem("hakone_hotel", pulp.LpMinimize)
+    ride = {
+        (p, k): pulp.LpVariable(f"rideH_{p}_{k}", cat="Binary")
+        for p in hotel_pids
+        for k in hotel_cars
+    }
+    usedcar = {k: pulp.LpVariable(f"usedH_{k}", cat="Binary") for k in hotel_cars}
+
+    for p in hotel_pids:
+        terms = [drive[(p, k)] for k in hotel_cars if (p, k) in drive]
+        terms += [ride[(p, k)] for k in hotel_cars]
+        prob += pulp.lpSum(terms) == 1
+
+    for k in hotel_cars:
+        drivers_k = [drive[(p, k)] for p in hotel_pids if (p, k) in drive]
+        prob += pulp.lpSum(drivers_k) == usedcar[k]
+
+        riders_k = [ride[(p, k)] for p in hotel_pids]
+        prob += pulp.lpSum(riders_k) <= (CAR_CAPACITY[k] - 1) * usedcar[k]
+        prob += pulp.lpSum(riders_k) >= usedcar[k]
+
+        grade2 = [ride[(p, k)] for p in hotel_pids if participants[p].grade >= 2]
+        prob += pulp.lpSum(grade2) >= usedcar[k]
+
+    prob += pulp.lpSum(usedcar.values())
+    _solve(prob)
+
+    cars = []
+    for k in hotel_cars:
+        if _val(usedcar[k]) == 0:
+            continue
+        driver_id = next(
+            (p for p in hotel_pids if (p, k) in drive and _val(drive[(p, k)]) == 1),
+            "NO_DRIVER",
+        )
+        passenger_ids = [p for p in hotel_pids if _val(ride[(p, k)]) == 1]
+        cars.append(CarState(
+            car_id=k,
+            driver_id=driver_id,
+            passenger_ids=passenger_ids,
+            is_mountain_goer=False,
+            car_type=CAR_TYPE[k],
+            group="hotel",
+        ))
+    return cars
+
+
 def _build_return_trip(participants: Dict[str, Participant], rent_solution: Dict[str, int]):
     """最後まで残った人がホテル/箱根から帰る行程。ランナーや山道免許は関係なく、
     レンタルした車(rent_solutionで1のもの)だけを使って運ぶ。日帰りで先に
@@ -454,6 +526,19 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
         print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
 
     sections_b = _extract_block_b(ctx_b, participants)
+
+    hotel_cars = _assign_hotel_group(ctx_b, participants)
+    if hotel_cars:
+        hotel_total = sum(c.total_people for c in hotel_cars)
+        names = ", ".join(
+            participants[p].name
+            for c in hotel_cars
+            for p in [c.driver_id] + c.passenger_ids
+            if p in participants
+        )
+        print(f"  🏨 ホテルグループ: {hotel_total}名 (車{len(hotel_cars)}台)  ({names})")
+        for sec in sections_b:
+            sec.cars.extend(hotel_cars)
 
     prob_c, ctx_c = _build_return_trip(participants, rent_solution)
     status_c = _solve(prob_c)
