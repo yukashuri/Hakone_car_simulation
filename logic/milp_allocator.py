@@ -160,6 +160,8 @@ def _build_block_a(participants: Dict[str, Participant]):
     for k in ALL_CAR_IDS:
         for p_mtn in mountain_hopefuls:
             for p_other in non_mountain:
+                if (p_other, k, 8) not in ride:
+                    continue  # 8区の時点でいない人はスキップ
                 prob += ride[(p_other, k, 8)] + occ[(p_mtn, k, 8)] <= 1
 
     # 8区: 山を走る予定の人（山道免許なし）はドライバーにしない（体力温存）
