@@ -26,7 +26,6 @@ from logic.allocator import save_plan_to_csv
 W_FLEET = 1000
 W_CONTINUITY = 5
 W_RUNNER_PREF = 50
-W_ADVANCE = 2
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -146,45 +145,32 @@ def _build_block_a(participants: Dict[str, Participant]):
                 prob += m <= occ[(p, k, s_cur)]
                 match_vars.append(m)
 
-    # 先行車変数: 次走者を乗せた車は先行車として次の中継所へ早めに向かう
-    advance = {
-        (k, s): pulp.LpVariable(f"adv_{k}_{s}", cat="Binary")
-        for k in ALL_CAR_IDS
-        for s in sections
-    }
-    for s_idx, s in enumerate(sections):
-        if s_idx + 1 < len(sections):
-            s_next = sections[s_idx + 1]
-            for p in pids:
-                if (p, s_next) in runs:
-                    for k in ALL_CAR_IDS:
-                        # occ[p,k,s]=1 かつ runs[p,s_next]=1 → advance[k,s]=1
-                        prob += advance[(k, s)] >= occ[(p, k, s)] + runs[(p, s_next)] - 1
-        else:
-            # 8区→9区はBlock B管轄のため preferred_sections で代替判断
-            for p in pids:
-                if participants[p].preferred_sections[8] and _present(participants, p, 9):
-                    for k in ALL_CAR_IDS:
-                        prob += advance[(k, s)] >= occ[(p, k, s)]
-
     prob += (
         W_FLEET * pulp.lpSum(CAR_COST[k] * rent[k] for k in ALL_CAR_IDS)
         - W_CONTINUITY * pulp.lpSum(match_vars)
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
-        + W_ADVANCE * pulp.lpSum(advance.values())
     )
 
-    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, advance=advance, pids=pids, sections=sections)
+    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
     return prob, ctx
 
 
 def _extract_block_a(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
-    runs, drive, ride, usedcar, rent, advance = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"], ctx["advance"]
+    runs, drive, ride, usedcar, rent = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"]
 
     sections_state: List[SectionState] = []
-    for s in sections:
+    for s_idx, s in enumerate(sections):
         runner_ids = [p for p in pids if (p, s) in runs and _val(runs[(p, s)]) == 1]
+
+        # 次走者 = この区間では走らないが次の区間で走る人
+        s_next = sections[s_idx + 1] if s_idx + 1 < len(sections) else None
+        if s_next:
+            next_runners = {p for p in pids if (p, s_next) in runs and _val(runs[(p, s_next)]) == 1}
+        else:
+            # 8区→9区: preferred_sectionsで代替
+            next_runners = {p for p in pids if participants[p].preferred_sections[8] and _present(participants, p, 9)}
+
         cars = []
         for k in ALL_CAR_IDS:
             if _val(usedcar[(k, s)]) == 0:
@@ -194,13 +180,15 @@ def _extract_block_a(ctx, participants):
                 "NO_DRIVER",
             )
             passenger_ids = [p for p in pids if (p, k, s) in ride and _val(ride[(p, k, s)]) == 1]
+            car_people = {driver_id} | set(passenger_ids)
+            is_adv = bool(car_people & next_runners)
             cars.append(
                 CarState(
                     car_id=k,
                     driver_id=driver_id,
                     passenger_ids=passenger_ids,
                     is_mountain_goer=False,
-                    is_advance=_val(advance[(k, s)]) == 1,
+                    is_advance=is_adv,
                     car_type=CAR_TYPE[k],
                     group=None,
                 )
