@@ -152,16 +152,15 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += occ[(p_mtn, k, 6)] + occ[(p_run, k, 6)] + runs[(p_run, 5)] <= 2
 
-    # 7〜8区: 山行き希望者の車には非山行き者を一切乗せない（山行き専用車を確立）
+    # 7〜8区: 山行き希望者が乗る車に非山行き者を同乗客（ride）として乗せない
+    # ドライバーは非山行き者でもOK（誰かが山まで運転する必要があるため）
     for s in [7, 8]:
         for k in ALL_CAR_IDS:
             for p_mtn in mountain_hopefuls:
                 for p_other in non_mountain:
-                    prob += occ[(p_mtn, k, s)] + occ[(p_other, k, s)] <= 1
+                    prob += ride[(p_other, k, s)] + occ[(p_mtn, k, s)] <= 1
 
-    # 7〜8区: 山を走る予定の人（山道免許なし）はドライバーにしない
-    # 山道免許あり = 山行き車のドライバー候補 → 運転OK
-    # 山道免許なし = ランナー候補 → 体力温存のためドライバー禁止
+    # 7〜8区: 山を走る予定の人（山道免許なし）はドライバーにしない（体力温存）
     mountain_runners = [p for p in mountain_hopefuls if not participants[p].can_drive_mountain]
     for s in [7, 8]:
         for k in ALL_CAR_IDS:
