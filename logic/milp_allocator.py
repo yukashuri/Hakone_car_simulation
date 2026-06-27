@@ -35,8 +35,8 @@ BLOCK_B_SECTIONS = [9, 10]
 RETURN_TRIP_SECTION_ID = 11  # 全員がホテル/箱根から帰る行程（CSV上は「帰路」と表示）
 
 
-def _solve(prob: pulp.LpProblem, time_limit: int = 90) -> str:
-    prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit))
+def _solve(prob: pulp.LpProblem, time_limit: int = 240) -> str:
+    prob.solve(pulp.PULP_CBC_CMD(msg=1, timeLimit=time_limit))
     return pulp.LpStatus[prob.status]
 
 
@@ -203,12 +203,12 @@ def _build_block_a(participants: Dict[str, Participant]):
         for p in pids:
             if (p, s_curr) not in runs:
                 continue
-            for k in ALL_CAR_IDS:
-                if (p, k, s_next) not in drive:
-                    continue
-                v = pulp.LpVariable(f"prd_{p}_{k}_{s_curr}", cat="Binary")
-                prob += v >= runs[(p, s_curr)] + drive[(p, k, s_next)] - 1
-                prev_run_drive_vars.append(v)
+            drive_next = [drive[(p, k, s_next)] for k in ALL_CAR_IDS if (p, k, s_next) in drive]
+            if not drive_next:
+                continue
+            v = pulp.LpVariable(f"prd_{p}_{s_curr}", cat="Binary")
+            prob += v >= runs[(p, s_curr)] + pulp.lpSum(drive_next) - 1
+            prev_run_drive_vars.append(v)
 
     # 7〜8区: 山行きランナー（山道免許なし）がドライバーになることをペナルティで抑制
     # 山道免許持ちが優先的にドライバーになるよう目的関数で誘導する（ハード制約だと詰まるため）
