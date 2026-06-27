@@ -20,16 +20,16 @@ import pulp
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import Participant, CarState, SectionState
 from validator import validate_section
-from logic.car_pool import ALL_CAR_IDS, CAR_TYPE, CAR_CAPACITY, CAR_COST, section_label
+from logic.car_pool import ALL_CAR_IDS, LARGE_CAR_IDS, NORMAL_CAR_IDS, CAR_TYPE, CAR_CAPACITY, CAR_COST, section_label
 from logic.allocator import save_plan_to_csv
 
-W_FLEET = 1000
+W_FLEET = 5000            # 台数コストを大幅に重く → 5台と8台の差(25000)が他の項目差(〜5000)を圧倒
 W_CONTINUITY = 5
 W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
-W_PARK = 3000             # レンタルした車が一部区間で未使用になることへのペナルティ（W_FLEET*最大車コスト=2000より大きくすること）
+W_PARK = 15000            # レンタルした車が一部区間で未使用になることへのペナルティ（W_FLEET*最大車コスト=10000より大きくすること）
 W_NO_GRADE2 = 100         # 2年生以上の同乗者がいない車へのペナルティ
 W_NO_PASSENGER = 50       # 同乗者なし（ドライバーのみ）の車へのペナルティ
 
@@ -61,6 +61,13 @@ def _build_block_a(participants: Dict[str, Participant]):
     prob = pulp.LpProblem("hakone_block_a", pulp.LpMinimize)
 
     rent = {k: pulp.LpVariable(f"rent_{k}", cat="Binary") for k in ALL_CAR_IDS}
+
+    # 対称性の除去: 同種の車はインデックス順に借りる（L2を借りるならL1も借りる）
+    # これにより等価な解の探索が大幅に減り、求解速度が向上する
+    for i in range(len(LARGE_CAR_IDS) - 1):
+        prob += rent[LARGE_CAR_IDS[i]] >= rent[LARGE_CAR_IDS[i + 1]]
+    for i in range(len(NORMAL_CAR_IDS) - 1):
+        prob += rent[NORMAL_CAR_IDS[i]] >= rent[NORMAL_CAR_IDS[i + 1]]
 
     runs = {}
     for p in pids:
