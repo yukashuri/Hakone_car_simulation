@@ -101,6 +101,7 @@ def _build_block_a(participants: Dict[str, Participant]):
             drivers_ks = [drive[(p, k, s)] for p in pids if (p, k, s) in drive]
             prob += pulp.lpSum(drivers_ks) == usedcar[(k, s)]
             prob += usedcar[(k, s)] <= rent[k]
+            prob += usedcar[(k, s)] >= rent[k]  # レンタル済みなら必ず使う（台数を全区間で一定に保つ）
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
@@ -381,20 +382,27 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
             terms += [ride[(p, k, s)] for k in rented_cars if (p, k, s) in ride]
             prob += pulp.lpSum(terms) == mtn[p]
 
+    b_no_passenger_vars = []
+    b_no_grade2_vars = []
     for k in rented_cars:
         for s in sections:
             drivers_ks = [drive[(p, k, s)] for p in mountain_capable if (p, k, s) in drive]
             prob += pulp.lpSum(drivers_ks) == usedcar[(k, s)]
             prob += usedcar[(k, s)] <= mtn_car[k]
+            prob += usedcar[(k, s)] >= mtn_car[k]  # 山行き車は両区間必ず使う
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
-            prob += pulp.lpSum(riders_ks) >= usedcar[(k, s)]
+            v_pass = pulp.LpVariable(f"bno_pass_{k}_{s}", cat="Binary")
+            prob += v_pass >= usedcar[(k, s)] - pulp.lpSum(riders_ks)
+            b_no_passenger_vars.append(v_pass)
 
             grade2_riders = [
                 ride[(p, k, s)] for p in pids if participants[p].grade >= 2 and (p, k, s) in ride
             ]
-            prob += pulp.lpSum(grade2_riders) >= usedcar[(k, s)]
+            v_g2 = pulp.LpVariable(f"bno_g2_{k}_{s}", cat="Binary")
+            prob += v_g2 >= usedcar[(k, s)] - pulp.lpSum(grade2_riders)
+            b_no_grade2_vars.append(v_g2)
 
         # 山行き車両は9区→10区でドライバーを変えない（1往復のみという前提）
         for p in mountain_capable:
@@ -436,6 +444,8 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_b_vars)
+        + W_NO_PASSENGER * pulp.lpSum(b_no_passenger_vars)
+        + W_NO_GRADE2 * pulp.lpSum(b_no_grade2_vars)
     )
 
     ctx = dict(
@@ -527,18 +537,29 @@ def _assign_hotel_group(ctx_b, participants, ran_section_8: set = None) -> List[
         terms += [ride[(p, k)] for k in hotel_cars]
         prob += pulp.lpSum(terms) == 1
 
+    h_no_passenger_vars = []
+    h_no_grade2_vars = []
     for k in hotel_cars:
+        prob += usedcar[k] >= 1  # レンタル済みの車は全台使う
+
         drivers_k = [drive[(p, k)] for p in hotel_pids if (p, k) in drive]
         prob += pulp.lpSum(drivers_k) == usedcar[k]
 
         riders_k = [ride[(p, k)] for p in hotel_pids]
         prob += pulp.lpSum(riders_k) <= (CAR_CAPACITY[k] - 1) * usedcar[k]
-        prob += pulp.lpSum(riders_k) >= usedcar[k]
+        v_pass = pulp.LpVariable(f"hno_pass_{k}", cat="Binary")
+        prob += v_pass >= usedcar[k] - pulp.lpSum(riders_k)
+        h_no_passenger_vars.append(v_pass)
 
         grade2 = [ride[(p, k)] for p in hotel_pids if participants[p].grade >= 2]
-        prob += pulp.lpSum(grade2) >= usedcar[k]
+        v_g2 = pulp.LpVariable(f"hno_g2_{k}", cat="Binary")
+        prob += v_g2 >= usedcar[k] - pulp.lpSum(grade2)
+        h_no_grade2_vars.append(v_g2)
 
-    prob += pulp.lpSum(usedcar.values())
+    prob += (
+        W_NO_PASSENGER * pulp.lpSum(h_no_passenger_vars)
+        + W_NO_GRADE2 * pulp.lpSum(h_no_grade2_vars)
+    )
     _solve(prob)
 
     cars = []
@@ -589,18 +610,29 @@ def _build_return_trip(participants: Dict[str, Participant], rent_solution: Dict
         terms += [ride[(p, k)] for k in rented_cars]
         prob += pulp.lpSum(terms) == 1  # 全員が必ずどれかの車に乗る
 
+    r_no_passenger_vars = []
+    r_no_grade2_vars = []
     for k in rented_cars:
+        prob += usedcar[k] >= 1  # レンタル済みの車は全台使う
+
         drivers_k = [drive[(p, k)] for p in pids if (p, k) in drive]
         prob += pulp.lpSum(drivers_k) == usedcar[k]
 
         riders_k = [ride[(p, k)] for p in pids]
         prob += pulp.lpSum(riders_k) <= (CAR_CAPACITY[k] - 1) * usedcar[k]
-        prob += pulp.lpSum(riders_k) >= usedcar[k]
+        v_pass = pulp.LpVariable(f"rno_pass_{k}", cat="Binary")
+        prob += v_pass >= usedcar[k] - pulp.lpSum(riders_k)
+        r_no_passenger_vars.append(v_pass)
 
         grade2_riders = [ride[(p, k)] for p in pids if participants[p].grade >= 2]
-        prob += pulp.lpSum(grade2_riders) >= usedcar[k]
+        v_g2 = pulp.LpVariable(f"rno_g2_{k}", cat="Binary")
+        prob += v_g2 >= usedcar[k] - pulp.lpSum(grade2_riders)
+        r_no_grade2_vars.append(v_g2)
 
-    prob += pulp.lpSum(usedcar.values())  # 使う車自体はできるだけ少なく(コストは既に確定済み)
+    prob += (
+        W_NO_PASSENGER * pulp.lpSum(r_no_passenger_vars)
+        + W_NO_GRADE2 * pulp.lpSum(r_no_grade2_vars)
+    )
 
     ctx = dict(drive=drive, ride=ride, usedcar=usedcar, pids=pids, rented_cars=rented_cars)
     return prob, ctx
