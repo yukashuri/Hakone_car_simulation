@@ -698,7 +698,8 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
 
     prob_a, ctx_a = _build_block_a(participants)
     status_a = _solve(prob_a)
-    print(f"Block A (1〜8区) 最適化ステータス: {status_a}")
+    obj_a = pulp.value(prob_a.objective)
+    print(f"Block A (1〜8区) 最適化ステータス: {status_a}  目的関数値={obj_a:.2f}")
     if status_a not in ("Optimal", "Feasible"):
         raise RuntimeError(f"Block A(1〜8区)が解けませんでした: {status_a}")
     if status_a == "Feasible":
