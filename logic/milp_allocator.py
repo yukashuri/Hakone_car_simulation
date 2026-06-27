@@ -194,14 +194,18 @@ def _build_block_a(participants: Dict[str, Participant]):
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
     )
 
-    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections, mountain_group=mountain_group)
+    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
     return prob, ctx
 
 
 def _extract_block_a(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
     runs, drive, ride, usedcar, rent = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"]
-    mountain_group = ctx.get("mountain_group", set())
+    # preferred_sectionsのパースに依存せず、Block Bで実際に山に行く人を含む集合として再計算
+    mountain_group = (
+        {p for p in pids if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]}
+        | {p for p in pids if participants[p].can_drive_mountain}
+    )
 
     sections_state: List[SectionState] = []
     for s_idx, s in enumerate(sections):
@@ -578,6 +582,16 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
         print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
 
     sections_b = _extract_block_b(ctx_b, participants)
+
+    # 7・8区の山行きラベルをBlock Bの実際の山グループ（mtn変数）で確定する。
+    # preferred_sectionsのパース精度に依存しないため、Googleフォーム形式でも確実に動く。
+    mountain_group_b = {p for p in ctx_b["pids"] if _val(ctx_b["mtn"][p]) == 1}
+    for section in sections_a:
+        if section.section_id in (7, 8):
+            for car in section.cars:
+                car_people = {car.driver_id} | set(car.passenger_ids)
+                if car_people & mountain_group_b:
+                    car.is_mountain_goer = True
 
     hotel_cars = _assign_hotel_group(ctx_b, participants)
     if hotel_cars:
