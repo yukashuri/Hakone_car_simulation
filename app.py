@@ -18,8 +18,11 @@ from validator import validate_participants, validate_transitions, count_car_cha
 
 CREDENTIALS_PATH = "credentials.json"
 
+APP_VERSION = "2026-06-27-d325470"
+
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
+st.caption(f"ver {APP_VERSION}")
 
 input_format = st.radio(
     "入力データの形式",
@@ -87,7 +90,7 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
                 passengers = [participants[pid].name for pid in car.passenger_ids if pid in participants]
                 car_type = "大型" if car.car_type == "large" else "普通"
                 mt_badge = "　⛰️ 山行き" if car.is_mountain_goer else ""
-                hotel_badge = "　🏨 ホテル組" if car.group == "hotel" else ""
+                hotel_badge = "　 ホテル組" if car.group == "hotel" else ""
                 adv_badge = "　🚀 先行" if car.is_advance else ""
 
                 st.markdown(f"**🚘 車 {car.car_id}**（{car_type}）{mt_badge}{hotel_badge}{adv_badge}")
