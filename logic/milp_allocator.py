@@ -29,7 +29,7 @@ W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
-W_PARK = 800              # レンタルした車が一部区間で未使用になることへのペナルティ
+W_PARK = 3000             # レンタルした車が一部区間で未使用になることへのペナルティ（W_FLEET*最大車コスト=2000より大きくすること）
 W_NO_GRADE2 = 100         # 2年生以上の同乗者がいない車へのペナルティ
 W_NO_PASSENGER = 50       # 同乗者なし（ドライバーのみ）の車へのペナルティ
 
@@ -101,7 +101,6 @@ def _build_block_a(participants: Dict[str, Participant]):
             drivers_ks = [drive[(p, k, s)] for p in pids if (p, k, s) in drive]
             prob += pulp.lpSum(drivers_ks) == usedcar[(k, s)]
             prob += usedcar[(k, s)] <= rent[k]
-            prob += usedcar[(k, s)] >= rent[k]  # レンタル済みなら必ず使う（台数を全区間で一定に保つ）
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
@@ -389,7 +388,6 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
             drivers_ks = [drive[(p, k, s)] for p in mountain_capable if (p, k, s) in drive]
             prob += pulp.lpSum(drivers_ks) == usedcar[(k, s)]
             prob += usedcar[(k, s)] <= mtn_car[k]
-            prob += usedcar[(k, s)] >= mtn_car[k]  # 山行き車は両区間必ず使う
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
@@ -440,12 +438,21 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
                 prob += v >= drive[(p, k, 9)]
                 prev_run_drive_b_vars.append(v)
 
+    # 山行き車のparkペナルティ: mtn_car[k]=1なのにusedcar[(k,s)]=0になるケース
+    b_park_vars = []
+    for k in rented_cars:
+        for s in sections:
+            v = pulp.LpVariable(f"bpark_{k}_{s}", cat="Binary")
+            prob += v >= mtn_car[k] - usedcar[(k, s)]
+            b_park_vars.append(v)
+
     prob += (
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_b_vars)
         + W_NO_PASSENGER * pulp.lpSum(b_no_passenger_vars)
         + W_NO_GRADE2 * pulp.lpSum(b_no_grade2_vars)
+        + W_PARK * pulp.lpSum(b_park_vars)
     )
 
     ctx = dict(
@@ -540,8 +547,6 @@ def _assign_hotel_group(ctx_b, participants, ran_section_8: set = None) -> List[
     h_no_passenger_vars = []
     h_no_grade2_vars = []
     for k in hotel_cars:
-        prob += usedcar[k] >= 1  # レンタル済みの車は全台使う
-
         drivers_k = [drive[(p, k)] for p in hotel_pids if (p, k) in drive]
         prob += pulp.lpSum(drivers_k) == usedcar[k]
 
@@ -556,8 +561,10 @@ def _assign_hotel_group(ctx_b, participants, ran_section_8: set = None) -> List[
         prob += v_g2 >= usedcar[k] - pulp.lpSum(grade2)
         h_no_grade2_vars.append(v_g2)
 
+    # レンタル済みの全車両を使うよう強く誘導（W_PARK > W_FLEET*コストなので借りた車は全台使う方が得）
     prob += (
-        W_NO_PASSENGER * pulp.lpSum(h_no_passenger_vars)
+        -W_PARK * pulp.lpSum(usedcar.values())
+        + W_NO_PASSENGER * pulp.lpSum(h_no_passenger_vars)
         + W_NO_GRADE2 * pulp.lpSum(h_no_grade2_vars)
     )
     _solve(prob)
@@ -613,8 +620,6 @@ def _build_return_trip(participants: Dict[str, Participant], rent_solution: Dict
     r_no_passenger_vars = []
     r_no_grade2_vars = []
     for k in rented_cars:
-        prob += usedcar[k] >= 1  # レンタル済みの車は全台使う
-
         drivers_k = [drive[(p, k)] for p in pids if (p, k) in drive]
         prob += pulp.lpSum(drivers_k) == usedcar[k]
 
@@ -629,8 +634,10 @@ def _build_return_trip(participants: Dict[str, Participant], rent_solution: Dict
         prob += v_g2 >= usedcar[k] - pulp.lpSum(grade2_riders)
         r_no_grade2_vars.append(v_g2)
 
+    # レンタル済みの全車両を使うよう強く誘導
     prob += (
-        W_NO_PASSENGER * pulp.lpSum(r_no_passenger_vars)
+        -W_PARK * pulp.lpSum(usedcar.values())
+        + W_NO_PASSENGER * pulp.lpSum(r_no_passenger_vars)
         + W_NO_GRADE2 * pulp.lpSum(r_no_grade2_vars)
     )
 
