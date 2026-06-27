@@ -29,8 +29,9 @@ W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
-W_PARK = 300              # レンタルした車が一部区間で未使用になることへのペナルティ
+W_PARK = 800              # レンタルした車が一部区間で未使用になることへのペナルティ
 W_NO_GRADE2 = 100         # 2年生以上の同乗者がいない車へのペナルティ
+W_NO_PASSENGER = 50       # 同乗者なし（ドライバーのみ）の車へのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -94,6 +95,7 @@ def _build_block_a(participants: Dict[str, Participant]):
     }
 
     no_grade2_vars = []
+    no_passenger_vars = []
     for s in sections:
         for k in ALL_CAR_IDS:
             drivers_ks = [drive[(p, k, s)] for p in pids if (p, k, s) in drive]
@@ -102,9 +104,11 @@ def _build_block_a(participants: Dict[str, Participant]):
 
             riders_ks = [ride[(p, k, s)] for p in pids if (p, k, s) in ride]
             prob += pulp.lpSum(riders_ks) <= (CAR_CAPACITY[k] - 1) * usedcar[(k, s)]
+            # 同乗者最低1名はソフト制約に変更（ランナーが多い区間で車が消えるのを防ぐため）
             if s != 8:
-                # 8区は山行き車がドライバー1人だけになることを許可するため下限なし
-                prob += pulp.lpSum(riders_ks) >= usedcar[(k, s)]
+                v_pass = pulp.LpVariable(f"no_pass_{k}_{s}", cat="Binary")
+                prob += v_pass >= usedcar[(k, s)] - pulp.lpSum(riders_ks)
+                no_passenger_vars.append(v_pass)
 
             grade2_riders = [ride[(p, k, s)] for p in pids if participants[p].grade >= 2 and (p, k, s) in ride]
             if s != 8:
@@ -254,6 +258,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_vars)
         + W_PARK * pulp.lpSum(park_vars)
         + W_NO_GRADE2 * pulp.lpSum(no_grade2_vars)
+        + W_NO_PASSENGER * pulp.lpSum(no_passenger_vars)
     )
 
     ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)

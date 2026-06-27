@@ -18,7 +18,7 @@ from validator import validate_participants, validate_transitions, count_car_cha
 
 CREDENTIALS_PATH = "credentials.json"
 
-APP_VERSION = "2026-06-27-park-fix"
+APP_VERSION = "2026-06-27-consistent-fleet"
 
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
