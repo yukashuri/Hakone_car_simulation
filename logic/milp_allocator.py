@@ -27,6 +27,7 @@ W_FLEET = 1000
 W_CONTINUITY = 5
 W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
+W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -139,6 +140,20 @@ def _build_block_a(participants: Dict[str, Participant]):
                     terms.append(drive[(p, k, s)])
                 occ[(p, k, s)] = pulp.lpSum(terms)
 
+    # 次区間ランナーをなるべく1台にまとめる（ソフト制約）
+    # adv[(k,s)]=1 ⟺ 区間sで車kに次区間ランナーが乗っている。この台数を最小化する。
+    adv_car_vars = []
+    for i in range(len(sections) - 1):
+        s, s_next = sections[i], sections[i + 1]
+        next_runner_pids = [p for p in pids if (p, s_next) in runs]
+        if not next_runner_pids:
+            continue
+        for k in ALL_CAR_IDS:
+            adv = pulp.LpVariable(f"adv_{k}_{s}", cat="Binary")
+            for p in next_runner_pids:
+                prob += adv >= runs[(p, s_next)] + occ[(p, k, s)] - 1
+            adv_car_vars.append(adv)
+
     mountain_hopefuls = [
         p for p in pids
         if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
@@ -215,6 +230,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         - W_CONTINUITY * pulp.lpSum(match_vars)
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
+        + W_ADVANCE_SPREAD * pulp.lpSum(adv_car_vars)
     )
 
     ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
