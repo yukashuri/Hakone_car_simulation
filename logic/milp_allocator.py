@@ -29,6 +29,8 @@ W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
+W_PARK = 300              # レンタルした車が一部区間で未使用になることへのペナルティ
+W_NO_GRADE2 = 100         # 2年生以上の同乗者がいない車へのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -91,6 +93,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         for s in sections
     }
 
+    no_grade2_vars = []
     for s in sections:
         for k in ALL_CAR_IDS:
             drivers_ks = [drive[(p, k, s)] for p in pids if (p, k, s) in drive]
@@ -105,7 +108,10 @@ def _build_block_a(participants: Dict[str, Participant]):
 
             grade2_riders = [ride[(p, k, s)] for p in pids if participants[p].grade >= 2 and (p, k, s) in ride]
             if s != 8:
-                prob += pulp.lpSum(grade2_riders) >= usedcar[(k, s)]
+                # ソフト制約: 2年生以上の同乗者がいることを推奨するが必須ではない
+                v_g2 = pulp.LpVariable(f"no_g2_{k}_{s}", cat="Binary")
+                prob += v_g2 >= usedcar[(k, s)] - pulp.lpSum(grade2_riders)
+                no_grade2_vars.append(v_g2)
 
         for p in pids:
             if not _present(participants, p, s):
@@ -119,6 +125,15 @@ def _build_block_a(participants: Dict[str, Participant]):
 
         runners_s = [runs[(p, s)] for p in pids if (p, s) in runs]
         prob += pulp.lpSum(runners_s) >= 1  # 各区間に最低1人は走者を確保
+
+    # レンタルした車を全区間で使うよう誘導（ソフト制約）
+    # rent[k]=1 なのに usedcar[(k,s)]=0 になる（"一時駐車"）を抑制する
+    park_vars = []
+    for k in ALL_CAR_IDS:
+        for s in sections:
+            v_park = pulp.LpVariable(f"park_{k}_{s}", cat="Binary")
+            prob += v_park >= rent[k] - usedcar[(k, s)]
+            park_vars.append(v_park)
 
     for p in pids:
         run_vars = [v for (pp, s), v in runs.items() if pp == p]
@@ -237,6 +252,8 @@ def _build_block_a(participants: Dict[str, Participant]):
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
         + W_ADVANCE_SPREAD * pulp.lpSum(adv_car_vars)
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_vars)
+        + W_PARK * pulp.lpSum(park_vars)
+        + W_NO_GRADE2 * pulp.lpSum(no_grade2_vars)
     )
 
     ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
