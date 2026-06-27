@@ -28,6 +28,7 @@ W_CONTINUITY = 5
 W_RUNNER_PREF = 50
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
+W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -195,15 +196,19 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += drive[(p, k, 7)] + occ[(p_sig, k, 7)] + runs[(p, 8)] <= 2
 
-    # 前区間を走った人は次区間の運転手になれない（体力保護）
+    # 前区間を走った人は次区間の運転手をなるべく避ける（体力保護、ソフト制約）
+    prev_run_drive_vars = []
     for i in range(len(sections) - 1):
         s_curr, s_next = sections[i], sections[i + 1]
         for p in pids:
             if (p, s_curr) not in runs:
                 continue
             for k in ALL_CAR_IDS:
-                if (p, k, s_next) in drive:
-                    prob += runs[(p, s_curr)] + drive[(p, k, s_next)] <= 1
+                if (p, k, s_next) not in drive:
+                    continue
+                v = pulp.LpVariable(f"prd_{p}_{k}_{s_curr}", cat="Binary")
+                prob += v >= runs[(p, s_curr)] + drive[(p, k, s_next)] - 1
+                prev_run_drive_vars.append(v)
 
     # 7〜8区: 山行きランナー（山道免許なし）がドライバーになることをペナルティで抑制
     # 山道免許持ちが優先的にドライバーになるよう目的関数で誘導する（ハード制約だと詰まるため）
@@ -231,6 +236,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
         + W_ADVANCE_SPREAD * pulp.lpSum(adv_car_vars)
+        + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_vars)
     )
 
     ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
@@ -391,16 +397,23 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         <= total_rented_cap - pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
     )
 
-    # 8区を走った人は9区の山行き車を運転しない（走り終わりで体力消耗のため）
-    for p in (mountain_capable if ran_section_8 else []):
-        if p in ran_section_8:
+    # 8区を走った人は9区の山行き車の運転をなるべく避ける（体力保護、ソフト制約）
+    prev_run_drive_b_vars = []
+    if ran_section_8:
+        for p in mountain_capable:
+            if p not in ran_section_8:
+                continue
             for k in rented_cars:
-                if (p, k, 9) in drive:
-                    prob += drive[(p, k, 9)] <= 0
+                if (p, k, 9) not in drive:
+                    continue
+                v = pulp.LpVariable(f"prd_b_{p}_{k}", cat="Binary")
+                prob += v >= drive[(p, k, 9)]
+                prev_run_drive_b_vars.append(v)
 
     prob += (
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
+        + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_b_vars)
     )
 
     ctx = dict(
