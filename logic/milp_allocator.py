@@ -26,6 +26,7 @@ from logic.allocator import save_plan_to_csv
 W_FLEET = 1000
 W_CONTINUITY = 5
 W_RUNNER_PREF = 50
+W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -142,8 +143,9 @@ def _build_block_a(participants: Dict[str, Participant]):
         p for p in pids
         if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
     ]
-    mountain_hopefuls_set = set(mountain_hopefuls)
-    non_mountain = [p for p in pids if p not in mountain_hopefuls_set]
+    # 7〜8区の山行き組 = 山行きランナー + 山道免許持ち（ドライバー候補）
+    mountain_group = set(mountain_hopefuls) | {p for p in pids if participants[p].can_drive_mountain}
+    non_mountain_strict = [p for p in pids if p not in mountain_group]
 
     # 6区: 山行き希望者の車に5区ランナーを同乗させない
     for k in ALL_CAR_IDS:
@@ -155,22 +157,25 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += occ[(p_mtn, k, 6)] + occ[(p_run, k, 6)] + runs[(p_run, 5)] <= 2
 
-    # 8区: 山行き希望者が乗る車に非山行き者を同乗客（ride）として乗せない
-    # ドライバーは非山行き者でもOK（誰かが山まで運転する必要があるため）
-    for k in ALL_CAR_IDS:
-        for p_mtn in mountain_hopefuls:
-            for p_other in non_mountain:
-                if (p_other, k, 8) not in ride:
-                    continue  # 8区の時点でいない人はスキップ
-                prob += ride[(p_other, k, 8)] + occ[(p_mtn, k, 8)] <= 1
+    # 7〜8区: 山行き組が乗る車に非山行き者を同乗客として乗せない
+    # ドライバーは誰でもOK（山道免許持ちが優先、なければ非山行き者が運転）
+    for s in [7, 8]:
+        for k in ALL_CAR_IDS:
+            for p_mtn in mountain_group:
+                for p_other in non_mountain_strict:
+                    if (p_other, k, s) not in ride:
+                        continue  # その区間にいない人はスキップ
+                    prob += ride[(p_other, k, s)] + occ[(p_mtn, k, s)] <= 1
 
-    # 8区: 山を走る予定の人（山道免許なし）はドライバーにしない（体力温存）
+    # 7〜8区: 山行きランナー（山道免許なし）がドライバーになることをペナルティで抑制
+    # 山道免許持ちが優先的にドライバーになるよう目的関数で誘導する（ハード制約だと詰まるため）
     mountain_runners = [p for p in mountain_hopefuls if not participants[p].can_drive_mountain]
-    for s in [8]:
+    mtn_runner_drive_vars = []
+    for s in [7, 8]:
         for k in ALL_CAR_IDS:
             for p_run in mountain_runners:
                 if (p_run, k, s) in drive:
-                    prob += drive[(p_run, k, s)] == 0
+                    mtn_runner_drive_vars.append(drive[(p_run, k, s)])
 
     match_vars = []
     for p in pids:
@@ -186,15 +191,17 @@ def _build_block_a(participants: Dict[str, Participant]):
         W_FLEET * pulp.lpSum(CAR_COST[k] * rent[k] for k in ALL_CAR_IDS)
         - W_CONTINUITY * pulp.lpSum(match_vars)
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
+        + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
     )
 
-    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
+    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections, mountain_group=mountain_group)
     return prob, ctx
 
 
 def _extract_block_a(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
     runs, drive, ride, usedcar, rent = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"]
+    mountain_group = ctx.get("mountain_group", set())
 
     sections_state: List[SectionState] = []
     for s_idx, s in enumerate(sections):
@@ -219,12 +226,14 @@ def _extract_block_a(ctx, participants):
             passenger_ids = [p for p in pids if (p, k, s) in ride and _val(ride[(p, k, s)]) == 1]
             car_people = {driver_id} | set(passenger_ids)
             is_adv = bool(car_people & next_runners)
+            # 7・8区で山行き組が乗っている車に「山行き」ラベルを付ける
+            is_mtn_car = s in (7, 8) and bool(car_people & mountain_group)
             cars.append(
                 CarState(
                     car_id=k,
                     driver_id=driver_id,
                     passenger_ids=passenger_ids,
-                    is_mountain_goer=False,
+                    is_mountain_goer=is_mtn_car,
                     is_advance=is_adv,
                     car_type=CAR_TYPE[k],
                     group=None,
