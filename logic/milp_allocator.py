@@ -685,6 +685,17 @@ def _renumber_cars(plan: List[SectionState], rent_solution: Dict[str, int]) -> N
 
 
 def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[SectionState]:
+    # 診断ログ: ローカルとアプリの差異を特定するため参加者データを出力
+    n_drive = sum(1 for p in participants.values() if p.can_drive)
+    n_large = sum(1 for p in participants.values() if p.can_drive_large)
+    n_mtn   = sum(1 for p in participants.values() if p.can_drive_mountain)
+    n_stay  = sum(1 for p in participants.values() if p.leaves_after_section is None)
+    total_pref = sum(sum(p.preferred_sections) for p in participants.values())
+    print(f"📋 参加者データ: 計{len(participants)}人 / 運転可={n_drive} / 大型可={n_large} / 山道可={n_mtn} / 宿泊(帰路対象)={n_stay} / 希望延べ区間数={total_pref}")
+    for pid, p in participants.items():
+        secs = [i+1 for i,v in enumerate(p.preferred_sections) if v]
+        print(f"  {p.name}: 希望{secs} 走行上限{p.remaining_sections} 運転{'○' if p.can_drive else '×'} 大型{'○' if p.can_drive_large else '×'} 宿泊{'○' if p.leaves_after_section is None else f'×(〜{p.leaves_after_section}区)'}")
+
     prob_a, ctx_a = _build_block_a(participants)
     status_a = _solve(prob_a)
     print(f"Block A (1〜8区) 最適化ステータス: {status_a}")
