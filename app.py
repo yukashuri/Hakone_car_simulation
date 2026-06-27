@@ -1,4 +1,5 @@
 import contextlib
+import importlib
 import io
 import os
 import sys
@@ -6,6 +7,10 @@ import sys
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+# Streamlit Cloud のホットリロード時にモジュールキャッシュが残るため明示的に再ロードする
+import logic.milp_allocator as _milp_mod
+importlib.reload(_milp_mod)
 
 from data_io.sheets_manager import (
     load_participants_from_form_sheet,
@@ -18,7 +23,7 @@ from validator import validate_participants, validate_transitions, count_car_cha
 
 CREDENTIALS_PATH = "credentials.json"
 
-APP_VERSION = "2026-06-28-fleet5k"
+APP_VERSION = "2026-06-28-reload"
 
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
