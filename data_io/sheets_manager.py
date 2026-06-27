@@ -114,9 +114,9 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
         def yes(col: str) -> bool:
             return get(col).startswith("はい")
 
-        # 走りたい区間: "1区, 3区, 10区" → [True, False, True, ..., True]
+        # 走りたい区間: カンマ・読点・中黒・スラッシュ・スペース（全角含む）など複数の区切り文字に対応
         preferred = [False] * 10
-        for item in get(col_sections).split(","):
+        for item in re.split(r'[,、・/\s　]+', get(col_sections)):
             item = item.strip().replace("区", "")
             if item.isdigit():
                 idx = int(item) - 1
