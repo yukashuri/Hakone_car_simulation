@@ -158,14 +158,22 @@ def _build_block_a(participants: Dict[str, Participant]):
                 prob += occ[(p_mtn, k, 6)] + occ[(p_run, k, 6)] + runs[(p_run, 5)] <= 2
 
     # 7〜8区: 山行き組が乗る車に非山行き者を同乗客として乗せない
-    # ドライバーは誰でもOK（山道免許持ちが優先、なければ非山行き者が運転）
     for s in [7, 8]:
         for k in ALL_CAR_IDS:
             for p_mtn in mountain_group:
                 for p_other in non_mountain_strict:
-                    if (p_other, k, s) not in ride:
-                        continue  # その区間にいない人はスキップ
-                    prob += ride[(p_other, k, s)] + occ[(p_mtn, k, s)] <= 1
+                    if (p_other, k, s) in ride:
+                        prob += ride[(p_other, k, s)] + occ[(p_mtn, k, s)] <= 1
+
+    # 7区: 8区を走る人は山行き車の運転手になれない（山行き車に乗ると8区スタートに戻れない）
+    for k in ALL_CAR_IDS:
+        for p in non_mountain_strict:
+            if (p, k, 7) not in drive:
+                continue
+            if (p, 8) not in runs:
+                continue
+            for p_mtn in mountain_group:
+                prob += drive[(p, k, 7)] + occ[(p_mtn, k, 7)] + runs[(p, 8)] <= 2
 
     # 7〜8区: 山行きランナー（山道免許なし）がドライバーになることをペナルティで抑制
     # 山道免許持ちが優先的にドライバーになるよう目的関数で誘導する（ハード制約だと詰まるため）
