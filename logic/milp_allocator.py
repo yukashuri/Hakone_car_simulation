@@ -586,6 +586,8 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
     # 7・8区の山行きラベルをBlock Bの実際の山グループ（mtn変数）で確定する。
     # preferred_sectionsのパース精度に依存しないため、Googleフォーム形式でも確実に動く。
     mountain_group_b = {p for p in ctx_b["pids"] if _val(ctx_b["mtn"][p]) == 1}
+    names_b = ", ".join(participants[p].name for p in mountain_group_b)
+    print(f"  🏔️ Block B 確定山グループ: {names_b if names_b else '（なし）'}")
     for section in sections_a:
         if section.section_id in (7, 8):
             for car in section.cars:

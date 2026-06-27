@@ -150,6 +150,10 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
             remaining_sections=remaining,
             leaves_after_section=leaves_after,
         )
+        # 9・10区希望者のパース確認ログ
+        if preferred[8] or preferred[9]:
+            secs = [i + 1 for i, v in enumerate(preferred) if v]
+            print(f"  ⛰️ 山行き候補: {get(col_name)} → 希望区間 {secs}  (生データ: '{get(col_sections)}')")
 
     return participants
 
