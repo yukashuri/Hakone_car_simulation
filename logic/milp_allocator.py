@@ -180,6 +180,16 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += drive[(p, k, 7)] + occ[(p_sig, k, 7)] + runs[(p, 8)] <= 2
 
+    # 前区間を走った人は次区間の運転手になれない（体力保護）
+    for i in range(len(sections) - 1):
+        s_curr, s_next = sections[i], sections[i + 1]
+        for p in pids:
+            if (p, s_curr) not in runs:
+                continue
+            for k in ALL_CAR_IDS:
+                if (p, k, s_next) in drive:
+                    prob += runs[(p, s_curr)] + drive[(p, k, s_next)] <= 1
+
     # 7〜8区: 山行きランナー（山道免許なし）がドライバーになることをペナルティで抑制
     # 山道免許持ちが優先的にドライバーになるよう目的関数で誘導する（ハード制約だと詰まるため）
     mountain_runners = [p for p in mountain_hopefuls if not participants[p].can_drive_mountain]
@@ -262,11 +272,12 @@ def _extract_block_a(ctx, participants):
     runs_used_in_a = {p: 0 for p in pids}
     for (p, s), v in runs.items():
         runs_used_in_a[p] += _val(v)
+    ran_section_8 = {p for p in pids if (p, 8) in runs and _val(runs[(p, 8)]) == 1}
 
-    return sections_state, rent_solution, runs_used_in_a
+    return sections_state, rent_solution, runs_used_in_a, ran_section_8
 
 
-def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str, int], runs_used_in_a: Dict[str, int]):
+def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str, int], runs_used_in_a: Dict[str, int], ran_section_8: set = None):
     # 9区・10区は1往復で完結するため、両方とも会場に残っている人だけが対象
     pids = [p for p in participants if _present(participants, p, 9) and _present(participants, p, 10)]
     sections = BLOCK_B_SECTIONS
@@ -364,6 +375,13 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         <= total_rented_cap - pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
     )
 
+    # 8区を走った人は9区の山行き車を運転しない（走り終わりで体力消耗のため）
+    for p in (mountain_capable if ran_section_8 else []):
+        if p in ran_section_8:
+            for k in rented_cars:
+                if (p, k, 9) in drive:
+                    prob += drive[(p, k, 9)] <= 0
+
     prob += (
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
@@ -419,7 +437,7 @@ def _extract_block_b(ctx, participants):
     return sections_state
 
 
-def _assign_hotel_group(ctx_b, participants) -> List[CarState]:
+def _assign_hotel_group(ctx_b, participants, ran_section_8: set = None) -> List[CarState]:
     """Block Bで山グループに入らなかった人（ホテルグループ）を非山行き車に割り当てる。
     9区・10区は同じ配車で固定（ホテル滞在中のため移動なし）。"""
     pids = ctx_b["pids"]
@@ -439,6 +457,7 @@ def _assign_hotel_group(ctx_b, participants) -> List[CarState]:
         for k in hotel_cars
         if participants[p].can_drive
         and not (CAR_TYPE[k] == "large" and not participants[p].can_drive_large)
+        and p not in (ran_section_8 or set())
     }
     if not drive:
         print("  ⚠️ ホテルグループに運転できる人がいないため、ホテル組の配車をスキップします。")
@@ -584,9 +603,12 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
     if status_a == "Feasible":
         print("  ⚠️ 制限時間内に最適性は証明できませんでしたが、見つかった解を使用します。")
 
-    sections_a, rent_solution, runs_used_in_a = _extract_block_a(ctx_a, participants)
+    sections_a, rent_solution, runs_used_in_a, ran_section_8 = _extract_block_a(ctx_a, participants)
+    if ran_section_8:
+        names_s8 = ", ".join(participants[p].name for p in ran_section_8)
+        print(f"  🏃 8区走者（次区間の運転除外）: {names_s8}")
 
-    prob_b, ctx_b = _build_block_b(participants, rent_solution, runs_used_in_a)
+    prob_b, ctx_b = _build_block_b(participants, rent_solution, runs_used_in_a, ran_section_8)
     status_b = _solve(prob_b)
     print(f"Block B (9〜10区) 最適化ステータス: {status_b}")
     if status_b not in ("Optimal", "Feasible"):
@@ -608,7 +630,7 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
                 if car_people & mountain_group_b:
                     car.is_mountain_goer = True
 
-    hotel_cars = _assign_hotel_group(ctx_b, participants)
+    hotel_cars = _assign_hotel_group(ctx_b, participants, ran_section_8)
     if hotel_cars:
         hotel_total = sum(c.total_people for c in hotel_cars)
         names = ", ".join(
