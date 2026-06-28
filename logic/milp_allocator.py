@@ -222,6 +222,21 @@ def _build_block_a(participants: Dict[str, Participant]):
                     continue
                 prob += drive[(p, k, 7)] + occ[(p_sig, k, 7)] + runs[(p, 8)] <= 2
 
+    # 7区→8区: 山行き車のメンバーを完全固定
+    # 山グループは7区で乗った車に8区もそのまま乗り続け、8区で新たに乗ることもできない
+    for p in mountain_group:
+        for k in ALL_CAR_IDS:
+            prob += occ[(p, k, 7)] == occ[(p, k, 8)]
+
+    # 7区→8区: 非山行きグループも山行き車では乗り降り禁止（運転手も含む）
+    # occ[(p_mtn,k,7)]=1（山グループが乗っている車）のとき、非山行き者のoccも7区=8区に固定する
+    # 線形化: occ_p8 + occ_mtn7 <= occ_p7 + 1 かつ occ_p7 + occ_mtn7 <= occ_p8 + 1
+    for p in non_mountain_strict:
+        for k in ALL_CAR_IDS:
+            for p_mtn in mountain_group:
+                prob += occ[(p, k, 8)] + occ[(p_mtn, k, 7)] <= occ[(p, k, 7)] + 1
+                prob += occ[(p, k, 7)] + occ[(p_mtn, k, 7)] <= occ[(p, k, 8)] + 1
+
     # 前区間を走った人は次区間の運転手をなるべく避ける（体力保護、ソフト制約）
     prev_run_drive_vars = []
     for i in range(len(sections) - 1):

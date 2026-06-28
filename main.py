@@ -66,7 +66,7 @@ def main():
             
             car_type = "大型" if car.car_type == "large" else "普通"
             is_mt = " ⛰️[山行き部隊]" if car.is_mountain_goer else ""
-            is_hotel = " 🏨[ホテル組]" if car.group == "hotel" else ""
+            is_hotel = " [ホテル組]" if car.group == "hotel" else ""
             is_adv = " 🚀[先行]" if car.is_advance else ""
 
             print(f"  🚘 車{car.car_id} ({car_type}){is_mt}{is_hotel}{is_adv} - 乗車人数: 計{car.total_people}人")
