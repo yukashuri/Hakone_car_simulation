@@ -91,7 +91,7 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
         raise ValueError("フォームの回答が0件です。")
 
     headers = all_values[0]
-    col_name     = _find_col(headers, "お名前")
+    col_name     = _find_col(headers, "名前")       # "名前" は "お名前" にも "名前" にもマッチ
     col_grade    = _find_col(headers, "学年")
     col_sections = _find_col(headers, "走りたい区間")
     col_count    = _find_col(headers, "何区間")
