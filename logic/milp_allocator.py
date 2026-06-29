@@ -751,8 +751,7 @@ def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[Sectio
         if section.section_id in (7, 8):
             for car in section.cars:
                 car_people = {car.driver_id} | set(car.passenger_ids)
-                if car_people & mountain_group_b:
-                    car.is_mountain_goer = True
+                car.is_mountain_goer = bool(car_people & mountain_group_b)
 
     hotel_cars = _assign_hotel_group(ctx_b, participants, ran_section_8)
     if hotel_cars:
