@@ -23,7 +23,7 @@ from validator import validate_participants, validate_transitions, count_car_cha
 
 CREDENTIALS_PATH = "credentials.json"
 
-APP_VERSION = "2026-06-29-form-name"
+APP_VERSION = "2026-07-01-car-mode-toggle"
 
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
@@ -44,6 +44,13 @@ url = st.text_input(
     "スプレッドシートのURL",
     placeholder="https://docs.google.com/spreadsheets/d/...",
 )
+
+car_mode = st.radio(
+    "使用する車種",
+    ["大型車 + 小型車", "小型車のみ"],
+    horizontal=True,
+)
+use_large_cars = car_mode == "大型車 + 小型車"
 
 if st.button("シミュレーション実行", type="primary", disabled=not url):
 
@@ -71,7 +78,7 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
     with st.spinner("配車を計算中（数十秒かかる場合があります）..."):
         try:
             with contextlib.redirect_stdout(log_buf):
-                plan = generate_full_plan_milp(participants)
+                plan = generate_full_plan_milp(participants, use_large_cars=use_large_cars)
         except Exception as e:
             st.error(f"計算に失敗しました。\n\n{e}")
             with st.expander("詳細ログ"):

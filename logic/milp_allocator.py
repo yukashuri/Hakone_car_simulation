@@ -54,20 +54,25 @@ def _present(participants: Dict[str, Participant], p: str, s: int) -> bool:
     return leaves is None or s <= leaves
 
 
-def _build_block_a(participants: Dict[str, Participant]):
+def _build_block_a(participants: Dict[str, Participant], car_ids=None):
+    if car_ids is None:
+        car_ids = ALL_CAR_IDS
+    large_ids = [k for k in car_ids if CAR_TYPE[k] == "large"]
+    normal_ids = [k for k in car_ids if CAR_TYPE[k] == "normal"]
+
     pids = list(participants.keys())
     sections = BLOCK_A_SECTIONS
 
     prob = pulp.LpProblem("hakone_block_a", pulp.LpMinimize)
 
-    rent = {k: pulp.LpVariable(f"rent_{k}", cat="Binary") for k in ALL_CAR_IDS}
+    rent = {k: pulp.LpVariable(f"rent_{k}", cat="Binary") for k in car_ids}
 
     # 対称性の除去: 同種の車はインデックス順に借りる（L2を借りるならL1も借りる）
     # これにより等価な解の探索が大幅に減り、求解速度が向上する
-    for i in range(len(LARGE_CAR_IDS) - 1):
-        prob += rent[LARGE_CAR_IDS[i]] >= rent[LARGE_CAR_IDS[i + 1]]
-    for i in range(len(NORMAL_CAR_IDS) - 1):
-        prob += rent[NORMAL_CAR_IDS[i]] >= rent[NORMAL_CAR_IDS[i + 1]]
+    for i in range(len(large_ids) - 1):
+        prob += rent[large_ids[i]] >= rent[large_ids[i + 1]]
+    for i in range(len(normal_ids) - 1):
+        prob += rent[normal_ids[i]] >= rent[normal_ids[i + 1]]
 
     runs = {}
     for p in pids:
@@ -80,7 +85,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         part = participants[p]
         if not part.can_drive:
             continue
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             if CAR_TYPE[k] == "large" and not part.can_drive_large:
                 continue
             for s in sections:
@@ -90,21 +95,21 @@ def _build_block_a(participants: Dict[str, Participant]):
     ride = {
         (p, k, s): pulp.LpVariable(f"ride_{p}_{k}_{s}", cat="Binary")
         for p in pids
-        for k in ALL_CAR_IDS
+        for k in car_ids
         for s in sections
         if _present(participants, p, s)
     }
 
     usedcar = {
         (k, s): pulp.LpVariable(f"used_{k}_{s}", cat="Binary")
-        for k in ALL_CAR_IDS
+        for k in car_ids
         for s in sections
     }
 
     no_grade2_vars = []
     no_passenger_vars = []
     for s in sections:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             drivers_ks = [drive[(p, k, s)] for p in pids if (p, k, s) in drive]
             prob += pulp.lpSum(drivers_ks) == usedcar[(k, s)]
             prob += usedcar[(k, s)] <= rent[k]
@@ -130,8 +135,8 @@ def _build_block_a(participants: Dict[str, Participant]):
             terms = []
             if (p, s) in runs:
                 terms.append(runs[(p, s)])
-            terms += [drive[(p, k, s)] for k in ALL_CAR_IDS if (p, k, s) in drive]
-            terms += [ride[(p, k, s)] for k in ALL_CAR_IDS if (p, k, s) in ride]
+            terms += [drive[(p, k, s)] for k in car_ids if (p, k, s) in drive]
+            terms += [ride[(p, k, s)] for k in car_ids if (p, k, s) in ride]
             prob += pulp.lpSum(terms) == 1
 
         runners_s = [runs[(p, s)] for p in pids if (p, s) in runs]
@@ -140,7 +145,7 @@ def _build_block_a(participants: Dict[str, Participant]):
     # レンタルした車を全区間で使うよう誘導（ソフト制約）
     # rent[k]=1 なのに usedcar[(k,s)]=0 になる（"一時駐車"）を抑制する
     park_vars = []
-    for k in ALL_CAR_IDS:
+    for k in car_ids:
         for s in sections:
             v_park = pulp.LpVariable(f"park_{k}_{s}", cat="Binary")
             prob += v_park >= rent[k] - usedcar[(k, s)]
@@ -154,11 +159,11 @@ def _build_block_a(participants: Dict[str, Participant]):
     # 帰りは最後まで残る人を同時に車で運ぶ必要があるため、レンタル車の総定員は
     # 日帰りで先に離脱する人を除いた人数以上にする
     return_trip_count = sum(1 for p in pids if participants[p].leaves_after_section is None)
-    prob += pulp.lpSum(CAR_CAPACITY[k] * rent[k] for k in ALL_CAR_IDS) >= return_trip_count
+    prob += pulp.lpSum(CAR_CAPACITY[k] * rent[k] for k in car_ids) >= return_trip_count
 
     occ = {}
     for p in pids:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             for s in sections:
                 terms = []
                 if (p, k, s) in ride:
@@ -175,7 +180,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         next_runner_pids = [p for p in pids if (p, s_next) in runs]
         if not next_runner_pids:
             continue
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             adv = pulp.LpVariable(f"adv_{k}_{s}", cat="Binary")
             for p in next_runner_pids:
                 prob += adv >= runs[(p, s_next)] + occ[(p, k, s)] - 1
@@ -190,7 +195,7 @@ def _build_block_a(participants: Dict[str, Participant]):
     non_mountain_strict = [p for p in pids if p not in mountain_group]
 
     # 6区: 山行き希望者の車に5区ランナーを同乗させない
-    for k in ALL_CAR_IDS:
+    for k in car_ids:
         for p_mtn in mountain_hopefuls:
             for p_run in pids:
                 if p_mtn == p_run:
@@ -201,7 +206,7 @@ def _build_block_a(participants: Dict[str, Participant]):
 
     # 7〜8区: 山行き組が乗る車に非山行き者を同乗客として乗せない
     for s in [7, 8]:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             for p_mtn in mountain_group:
                 for p_other in non_mountain_strict:
                     if (p_other, k, s) in ride:
@@ -211,7 +216,7 @@ def _build_block_a(participants: Dict[str, Participant]):
     # mountain_group と 山道免許持ち（can_drive_mountain）の両方を山行き車の識別子として使う
     mountain_drivers_set = {p for p in pids if participants[p].can_drive_mountain}
     mountain_car_signal = mountain_group | mountain_drivers_set
-    for k in ALL_CAR_IDS:
+    for k in car_ids:
         for p in non_mountain_strict:
             if (p, k, 7) not in drive:
                 continue
@@ -225,14 +230,14 @@ def _build_block_a(participants: Dict[str, Participant]):
     # 7区→8区: 山行き車のメンバーを完全固定
     # 山グループは7区で乗った車に8区もそのまま乗り続け、8区で新たに乗ることもできない
     for p in mountain_group:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             prob += occ[(p, k, 7)] == occ[(p, k, 8)]
 
     # 7区→8区: 非山行きグループも山行き車では乗り降り禁止（運転手も含む）
     # occ[(p_mtn,k,7)]=1（山グループが乗っている車）のとき、非山行き者のoccも7区=8区に固定する
     # 線形化: occ_p8 + occ_mtn7 <= occ_p7 + 1 かつ occ_p7 + occ_mtn7 <= occ_p8 + 1
     for p in non_mountain_strict:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             for p_mtn in mountain_group:
                 prob += occ[(p, k, 8)] + occ[(p_mtn, k, 7)] <= occ[(p, k, 7)] + 1
                 prob += occ[(p, k, 7)] + occ[(p_mtn, k, 7)] <= occ[(p, k, 8)] + 1
@@ -244,7 +249,7 @@ def _build_block_a(participants: Dict[str, Participant]):
         for p in pids:
             if (p, s_curr) not in runs:
                 continue
-            drive_next = [drive[(p, k, s_next)] for k in ALL_CAR_IDS if (p, k, s_next) in drive]
+            drive_next = [drive[(p, k, s_next)] for k in car_ids if (p, k, s_next) in drive]
             if not drive_next:
                 continue
             v = pulp.LpVariable(f"prd_{p}_{s_curr}", cat="Binary")
@@ -256,14 +261,14 @@ def _build_block_a(participants: Dict[str, Participant]):
     mountain_runners = [p for p in mountain_hopefuls if not participants[p].can_drive_mountain]
     mtn_runner_drive_vars = []
     for s in [7, 8]:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             for p_run in mountain_runners:
                 if (p_run, k, s) in drive:
                     mtn_runner_drive_vars.append(drive[(p_run, k, s)])
 
     match_vars = []
     for p in pids:
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             for i in range(1, len(sections)):
                 s_prev, s_cur = sections[i - 1], sections[i]
                 m = pulp.LpVariable(f"match_{p}_{k}_{s_prev}_{s_cur}", cat="Binary")
@@ -272,7 +277,7 @@ def _build_block_a(participants: Dict[str, Participant]):
                 match_vars.append(m)
 
     prob += (
-        W_FLEET * pulp.lpSum(CAR_COST[k] * rent[k] for k in ALL_CAR_IDS)
+        W_FLEET * pulp.lpSum(CAR_COST[k] * rent[k] for k in car_ids)
         - W_CONTINUITY * pulp.lpSum(match_vars)
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
@@ -283,13 +288,14 @@ def _build_block_a(participants: Dict[str, Participant]):
         + W_NO_PASSENGER * pulp.lpSum(no_passenger_vars)
     )
 
-    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections)
+    ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections, car_ids=car_ids)
     return prob, ctx
 
 
 def _extract_block_a(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
     runs, drive, ride, usedcar, rent = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"]
+    car_ids = ctx["car_ids"]
     # preferred_sectionsのパースに依存せず、Block Bで実際に山に行く人を含む集合として再計算
     mountain_group = (
         {p for p in pids if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]}
@@ -309,7 +315,7 @@ def _extract_block_a(ctx, participants):
             next_runners = {p for p in pids if participants[p].preferred_sections[8] and _present(participants, p, 9)}
 
         cars = []
-        for k in ALL_CAR_IDS:
+        for k in car_ids:
             if _val(usedcar[(k, s)]) == 0:
                 continue
             driver_id = next(
@@ -334,7 +340,7 @@ def _extract_block_a(ctx, participants):
             )
         sections_state.append(SectionState(section_id=s, runner_ids=runner_ids, cars=cars))
 
-    rent_solution = {k: _val(rent[k]) for k in ALL_CAR_IDS}
+    rent_solution = {k: _val(rent[k]) for k in car_ids}
     runs_used_in_a = {p: 0 for p in pids}
     for (p, s), v in runs.items():
         runs_used_in_a[p] += _val(v)
@@ -706,19 +712,24 @@ def _renumber_cars(plan: List[SectionState], rent_solution: Dict[str, int]) -> N
             car.car_id = mapping.get(car.car_id, car.car_id)
 
 
-def generate_full_plan_milp(participants: Dict[str, Participant]) -> List[SectionState]:
+def generate_full_plan_milp(participants: Dict[str, Participant], use_large_cars: bool = True) -> List[SectionState]:
+    # 使用する車種に応じて候補車IDを絞る
+    active_car_ids = ALL_CAR_IDS if use_large_cars else NORMAL_CAR_IDS
+    mode_label = "大型車 + 小型車" if use_large_cars else "小型車のみ"
+
     # 診断ログ: ローカルとアプリの差異を特定するため参加者データを出力
     n_drive = sum(1 for p in participants.values() if p.can_drive)
     n_large = sum(1 for p in participants.values() if p.can_drive_large)
     n_mtn   = sum(1 for p in participants.values() if p.can_drive_mountain)
     n_stay  = sum(1 for p in participants.values() if p.leaves_after_section is None)
     total_pref = sum(sum(p.preferred_sections) for p in participants.values())
+    print(f"🚗 車種モード: {mode_label}")
     print(f"📋 参加者データ: 計{len(participants)}人 / 運転可={n_drive} / 大型可={n_large} / 山道可={n_mtn} / 宿泊(帰路対象)={n_stay} / 希望延べ区間数={total_pref}")
     for pid, p in participants.items():
         secs = [i+1 for i,v in enumerate(p.preferred_sections) if v]
         print(f"  {p.name}: 希望{secs} 走行上限{p.remaining_sections} 運転{'○' if p.can_drive else '×'} 大型{'○' if p.can_drive_large else '×'} 宿泊{'○' if p.leaves_after_section is None else f'×(〜{p.leaves_after_section}区)'}")
 
-    prob_a, ctx_a = _build_block_a(participants)
+    prob_a, ctx_a = _build_block_a(participants, car_ids=active_car_ids)
     status_a = _solve(prob_a)
     obj_a = pulp.value(prob_a.objective)
     print(f"Block A (1〜8区) 最適化ステータス: {status_a}  目的関数値={obj_a:.2f}")
