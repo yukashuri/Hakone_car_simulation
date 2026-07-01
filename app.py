@@ -9,7 +9,10 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Streamlit Cloud のホットリロード時にモジュールキャッシュが残るため明示的に再ロードする
+# car_pool を先にリロードしないと milp_allocator が古い定数（定員など）を参照してしまう
+import logic.car_pool as _car_pool_mod
 import logic.milp_allocator as _milp_mod
+importlib.reload(_car_pool_mod)
 importlib.reload(_milp_mod)
 
 from data_io.sheets_manager import (
@@ -23,7 +26,7 @@ from validator import validate_participants, validate_transitions, count_car_cha
 
 CREDENTIALS_PATH = "credentials.json"
 
-APP_VERSION = "2026-07-01-normal-cap4"
+APP_VERSION = "2026-07-01-reload-fix"
 
 st.set_page_config(page_title="箱根駅伝配車シミュレーター", page_icon="🚗")
 st.title("🚗 箱根駅伝配車シミュレーター")
