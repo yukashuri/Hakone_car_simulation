@@ -16,7 +16,7 @@ NORMAL_COST = 1
 
 # 最適化が選べる候補車スロット（実際に使うのはこの中の一部だけでよい）
 LARGE_CAR_IDS = ["L1", "L2", "L3", "L4"]
-NORMAL_CAR_IDS = ["N1", "N2", "N3", "N4"]
+NORMAL_CAR_IDS = ["N1", "N2", "N3", "N4", "N5", "N6", "N7", "N8"]
 ALL_CAR_IDS = LARGE_CAR_IDS + NORMAL_CAR_IDS
 
 CAR_TYPE = {car_id: "large" for car_id in LARGE_CAR_IDS}
