@@ -32,6 +32,7 @@ W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になるこ�
 W_PARK = 15000            # レンタルした車が一部区間で未使用になることへのペナルティ（W_FLEET*最大車コスト=10000より大きくすること）
 W_NO_GRADE2 = 100         # 2年生以上の同乗者がいない車へのペナルティ
 W_NO_PASSENGER = 50       # 同乗者なし（ドライバーのみ）の車へのペナルティ
+W_NO_RUN = 500            # 希望区間があるのに1区間も走らない人へのペナルティ
 
 BLOCK_A_SECTIONS = list(range(1, 9))
 BLOCK_B_SECTIONS = [9, 10]
@@ -155,6 +156,18 @@ def _build_block_a(participants: Dict[str, Participant], car_ids=None):
         run_vars = [v for (pp, s), v in runs.items() if pp == p]
         if run_vars:
             prob += pulp.lpSum(run_vars) <= participants[p].remaining_sections
+
+    # 希望区間がある人が1区間も走らない場合にペナルティを科す（ソフト制約）
+    no_run_vars = []
+    for p in pids:
+        if participants[p].remaining_sections <= 0:
+            continue
+        run_vars_p = [v for (pp, s), v in runs.items() if pp == p]
+        if not run_vars_p:
+            continue  # 1〜8区に希望なし → Block Bで走る
+        v_no_run = pulp.LpVariable(f"no_run_{p}", cat="Binary")
+        prob += pulp.lpSum(run_vars_p) + v_no_run >= 1
+        no_run_vars.append(v_no_run)
 
     # 帰りは最後まで残る人を同時に車で運ぶ必要があるため、レンタル車の総定員は
     # 日帰りで先に離脱する人を除いた人数以上にする
@@ -286,6 +299,7 @@ def _build_block_a(participants: Dict[str, Participant], car_ids=None):
         + W_PARK * pulp.lpSum(park_vars)
         + W_NO_GRADE2 * pulp.lpSum(no_grade2_vars)
         + W_NO_PASSENGER * pulp.lpSum(no_passenger_vars)
+        + W_NO_RUN * pulp.lpSum(no_run_vars)
     )
 
     ctx = dict(rent=rent, runs=runs, drive=drive, ride=ride, usedcar=usedcar, pids=pids, sections=sections, car_ids=car_ids)
@@ -400,6 +414,21 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         if run_vars:
             prob += pulp.lpSum(run_vars) <= remaining_budget[p]
 
+    # Block Aで1区間も走れなかった人が9・10区でも走れない場合にペナルティ
+    no_run_vars_b = []
+    for p in pids:
+        if runs_used_in_a.get(p, 0) > 0:
+            continue  # Block Aで既に走っている
+        if remaining_budget[p] <= 0:
+            continue
+        run_vars_p = [v for (pp, s), v in runs.items() if pp == p]
+        if not run_vars_p:
+            continue  # 9・10区にも希望なし
+        v_no_run = pulp.LpVariable(f"no_run_b_{p}", cat="Binary")
+        prob += pulp.lpSum(run_vars_p) + v_no_run >= 1
+        no_run_vars_b.append(v_no_run)
+
+    for p in pids:
         for s in sections:
             terms = []
             if (p, s) in runs:
@@ -481,6 +510,7 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         + W_NO_PASSENGER * pulp.lpSum(b_no_passenger_vars)
         + W_NO_GRADE2 * pulp.lpSum(b_no_grade2_vars)
         + W_PARK * pulp.lpSum(b_park_vars)
+        + W_NO_RUN * pulp.lpSum(no_run_vars_b)
     )
 
     ctx = dict(
