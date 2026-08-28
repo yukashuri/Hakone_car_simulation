@@ -21,7 +21,7 @@ from data_io.sheets_manager import (
     save_plan_to_sheet,
 )
 from logic.milp_allocator import generate_full_plan_milp
-from logic.car_pool import section_label
+from logic.car_pool import section_label, LARGE_CAR_IDS, NORMAL_CAR_IDS
 from validator import validate_participants, validate_transitions, count_car_changes, compute_runner_satisfaction
 
 CREDENTIALS_PATH = "credentials.json"
@@ -48,14 +48,18 @@ url = st.text_input(
     placeholder="https://docs.google.com/spreadsheets/d/...",
 )
 
-car_mode = st.radio(
-    "使用する車種",
-    ["大型車 + 小型車", "小型車のみ"],
-    horizontal=True,
+st.subheader("車両スロット設定")
+col_l, col_n = st.columns(2)
+n_large_slots = col_l.number_input(
+    "大型車（8人乗り）スロット数", min_value=0, max_value=len(LARGE_CAR_IDS), value=0, step=1
 )
-use_large_cars = car_mode == "大型車 + 小型車"
+n_normal_slots = col_n.number_input(
+    "普通車（4人乗り）スロット数", min_value=0, max_value=len(NORMAL_CAR_IDS), value=len(NORMAL_CAR_IDS), step=1
+)
+active_car_ids = LARGE_CAR_IDS[:n_large_slots] + NORMAL_CAR_IDS[:n_normal_slots]
+st.caption(f"最大定員: 大型 {n_large_slots}台×8人 + 普通 {n_normal_slots}台×4人 = {n_large_slots*8 + n_normal_slots*4}人")
 
-if st.button("シミュレーション実行", type="primary", disabled=not url):
+if st.button("シミュレーション実行", type="primary", disabled=not url or not active_car_ids):
 
     log_buf = io.StringIO()
 
@@ -81,7 +85,7 @@ if st.button("シミュレーション実行", type="primary", disabled=not url)
     with st.spinner("配車を計算中（数十秒かかる場合があります）..."):
         try:
             with contextlib.redirect_stdout(log_buf):
-                plan = generate_full_plan_milp(participants, use_large_cars=use_large_cars)
+                plan = generate_full_plan_milp(participants, active_car_ids=active_car_ids)
         except Exception as e:
             st.error(f"計算に失敗しました。\n\n{e}")
             with st.expander("詳細ログ"):

@@ -742,10 +742,12 @@ def _renumber_cars(plan: List[SectionState], rent_solution: Dict[str, int]) -> N
             car.car_id = mapping.get(car.car_id, car.car_id)
 
 
-def generate_full_plan_milp(participants: Dict[str, Participant], use_large_cars: bool = True) -> List[SectionState]:
-    # 使用する車種に応じて候補車IDを絞る
-    active_car_ids = ALL_CAR_IDS if use_large_cars else NORMAL_CAR_IDS
-    mode_label = "大型車 + 小型車" if use_large_cars else "小型車のみ"
+def generate_full_plan_milp(participants: Dict[str, Participant], active_car_ids: List[str] = None) -> List[SectionState]:
+    if active_car_ids is None:
+        active_car_ids = ALL_CAR_IDS
+    n_large_slots = sum(1 for k in active_car_ids if CAR_TYPE[k] == "large")
+    n_normal_slots = sum(1 for k in active_car_ids if CAR_TYPE[k] == "normal")
+    mode_label = f"大型{n_large_slots}台スロット + 普通{n_normal_slots}台スロット"
 
     # 診断ログ: ローカルとアプリの差異を特定するため参加者データを出力
     n_drive = sum(1 for p in participants.values() if p.can_drive)
