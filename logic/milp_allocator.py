@@ -138,7 +138,16 @@ def _build_block_a(participants: Dict[str, Participant], car_ids=None):
                 terms.append(runs[(p, s)])
             terms += [drive[(p, k, s)] for k in car_ids if (p, k, s) in drive]
             terms += [ride[(p, k, s)] for k in car_ids if (p, k, s) in ride]
-            prob += pulp.lpSum(terms) == 1
+
+            # 2区ランナーは1区で車に乗らなくてよい（自力で2区スタート地点に向かえる）
+            if s == 1 and (p, 2) in runs:
+                atstart = pulp.LpVariable(f"atstart_{p}_1", cat="Binary")
+                run_cur = runs[(p, 1)] if (p, 1) in runs else 0
+                prob += pulp.lpSum(terms) + atstart == 1
+                prob += atstart >= runs[(p, 2)] - run_cur
+                prob += atstart <= runs[(p, 2)]
+            else:
+                prob += pulp.lpSum(terms) == 1
 
         runners_s = [runs[(p, s)] for p in pids if (p, s) in runs]
         prob += pulp.lpSum(runners_s) >= 1  # 各区間に最低1人は走者を確保
