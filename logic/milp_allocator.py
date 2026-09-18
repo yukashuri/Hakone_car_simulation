@@ -400,6 +400,7 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         for p in mountain_capable
         for k in rented_cars
         for s in sections
+        if not (CAR_TYPE[k] == "large" and not participants[p].can_drive_large)
     }
     ride = {
         (p, k, s): pulp.LpVariable(f"rideB_{p}_{k}_{s}", cat="Binary")
@@ -483,6 +484,18 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         len(pids) - pulp.lpSum(mtn[p] for p in pids)
         <= total_rented_cap - pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
     )
+
+    # ホテル大型車には大型免許持ちのドライバーが必要。
+    # ホテル大型車の台数 ≤ ホテル組に残る大型免許持ちの人数 を保証する。
+    # 等価: sum(mtn_car[large_k]) - sum(mtn[large_capable_p]) >= len(large_rented) - len(large_capable)
+    large_capable_b = [p for p in pids if participants[p].can_drive_large]
+    large_rented = [k for k in rented_cars if CAR_TYPE[k] == "large"]
+    if large_capable_b and large_rented:
+        prob += (
+            pulp.lpSum(mtn_car[k] for k in large_rented)
+            - pulp.lpSum(mtn[p] for p in large_capable_b)
+            >= len(large_rented) - len(large_capable_b)
+        )
 
     # 8区を走った人は9区の山行き車の運転をなるべく避ける（体力保護、ソフト制約）
     prev_run_drive_b_vars = []
@@ -807,7 +820,7 @@ def generate_full_plan_milp(participants: Dict[str, Participant], active_car_ids
             for p in [c.driver_id] + c.passenger_ids
             if p in participants
         )
-        print(f"  🏨 ホテルグループ: {hotel_total}名 (車{len(hotel_cars)}台)  ({names})")
+        print(f"  ホテルグループ: {hotel_total}名 (車{len(hotel_cars)}台)  ({names})")
         for sec in sections_b:
             sec.cars.extend(hotel_cars)
 

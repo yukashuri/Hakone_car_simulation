@@ -126,10 +126,10 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
         grade_match = re.match(r"(\d+)", get(col_grade))
         grade = int(grade_match.group(1)) if grade_match else 1
 
-        count_str = get(col_count)
+        count_str = get(col_count).replace(".0", "")
         remaining = int(count_str) if count_str.isdigit() else preferred.count(True)
 
-        leave_str = get(col_leave).replace("区", "")
+        leave_str = get(col_leave).replace("区", "").replace(".0", "")
         leaves_after = int(leave_str) if leave_str.isdigit() else None
 
         is_large    = yes(col_large)
