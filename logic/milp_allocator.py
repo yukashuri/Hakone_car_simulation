@@ -203,8 +203,10 @@ def _build_block_a(participants: Dict[str, Participant], car_ids=None):
         p for p in pids
         if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
     ]
-    # 7〜8区の山行き組 = 山行きランナー + 山道免許持ち（ドライバー候補）
-    mountain_group = set(mountain_hopefuls) | {p for p in pids if participants[p].can_drive_mountain}
+    # 7〜8区の山行き組 = 9・10区を走りたい人のみ
+    # can_drive_mountain は「山道を運転できる資格」であり、山に行くかどうかとは別。
+    # Block B で山行き車のドライバーとして使う。
+    mountain_group = set(mountain_hopefuls)
     non_mountain_strict = [p for p in pids if p not in mountain_group]
 
     # 6区: 山行き希望者の車に5区ランナーを同乗させない
@@ -310,11 +312,11 @@ def _extract_block_a(ctx, participants):
     pids, sections = ctx["pids"], ctx["sections"]
     runs, drive, ride, usedcar, rent = ctx["runs"], ctx["drive"], ctx["ride"], ctx["usedcar"], ctx["rent"]
     car_ids = ctx["car_ids"]
-    # preferred_sectionsのパースに依存せず、Block Bで実際に山に行く人を含む集合として再計算
-    mountain_group = (
-        {p for p in pids if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]}
-        | {p for p in pids if participants[p].can_drive_mountain}
-    )
+    # 9・10区希望者のみを山行きラベルの判定に使う（can_drive_mountainはBlock Bで使用）
+    mountain_group = {
+        p for p in pids
+        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
+    }
 
     sections_state: List[SectionState] = []
     for s_idx, s in enumerate(sections):
