@@ -94,6 +94,7 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
     col_name     = _find_col(headers, "名前")       # "名前" は "お名前" にも "名前" にもマッチ
     col_grade    = _find_col(headers, "学年")
     col_sections = _find_col(headers, "走りたい区間")
+    col_priority = _find_col(headers, "特に走りたい")
     col_count    = _find_col(headers, "何区間")
     col_drive    = _find_col(headers, "普通自動車")
     col_large    = _find_col(headers, "大型")
@@ -114,14 +115,20 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
         def yes(col: str) -> bool:
             return get(col).startswith("はい")
 
+        def _parse_sections(raw: str) -> list:
+            result = [False] * 10
+            for item in re.split(r'[,、・/\s　]+', raw):
+                item = item.strip().replace("区", "")
+                if item.isdigit():
+                    idx = int(item) - 1
+                    if 0 <= idx < 10:
+                        result[idx] = True
+            return result
+
         # 走りたい区間: カンマ・読点・中黒・スラッシュ・スペース（全角含む）など複数の区切り文字に対応
-        preferred = [False] * 10
-        for item in re.split(r'[,、・/\s　]+', get(col_sections)):
-            item = item.strip().replace("区", "")
-            if item.isdigit():
-                idx = int(item) - 1
-                if 0 <= idx < 10:
-                    preferred[idx] = True
+        preferred = _parse_sections(get(col_sections))
+        # 特に走りたい区間（「特になし」等の文字列は数字が含まれないので自然に空になる）
+        priority = _parse_sections(get(col_priority)) if col_priority else [False] * 10
 
         grade_match = re.match(r"(\d+)", get(col_grade))
         grade = int(grade_match.group(1)) if grade_match else 1
@@ -149,6 +156,7 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
             grade=grade,
             remaining_sections=remaining,
             leaves_after_section=leaves_after,
+            priority_sections=priority,
         )
         # 9・10区希望者のパース確認ログ
         if preferred[8] or preferred[9]:

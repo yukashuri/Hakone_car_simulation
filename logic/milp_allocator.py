@@ -26,6 +26,7 @@ from logic.allocator import save_plan_to_csv
 W_FLEET = 5000            # 台数コストを大幅に重く → 5台と8台の差(25000)が他の項目差(〜5000)を圧倒
 W_CONTINUITY = 5
 W_RUNNER_PREF = 50
+W_PRIORITY_RUN = 300          # 特に走りたい区間を走った場合の追加ボーナス（W_RUNNER_PREFに上乗せ）
 W_MTN_RUNNER_DRIVE = 500  # 山行きランナーが7・8区でドライバーになることへのペナルティ
 W_ADVANCE_SPREAD = 30     # 次区間ランナーが複数の先行車に分散することへのペナルティ
 W_PREV_RUN_DRIVE = 200    # 前区間走者が次区間の運転手になることへのペナルティ
@@ -300,10 +301,18 @@ def _build_block_a(participants: Dict[str, Participant], car_ids=None):
                 prob += m <= occ[(p, k, s_cur)]
                 match_vars.append(m)
 
+    # 特に走りたい区間の runs 変数に追加ボーナスを付与（最小化なので引く）
+    priority_run_vars_a = [
+        runs[(p, s)]
+        for (p, s) in runs
+        if participants[p].priority_sections[s - 1]
+    ]
+
     prob += (
         W_FLEET * pulp.lpSum(CAR_COST[k] * rent[k] for k in car_ids)
         - W_CONTINUITY * pulp.lpSum(match_vars)
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
+        - W_PRIORITY_RUN * pulp.lpSum(priority_run_vars_a)
         + W_MTN_RUNNER_DRIVE * pulp.lpSum(mtn_runner_drive_vars)
         + W_ADVANCE_SPREAD * pulp.lpSum(adv_car_vars)
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_vars)
@@ -494,6 +503,15 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
         <= total_rented_cap - pulp.lpSum(CAR_CAPACITY[k] * mtn_car[k] for k in rented_cars)
     )
 
+    # 山に無関係な人（9/10区希望なし・山道免許なし）は山グループに入らない
+    mountain_related_b = set(mountain_capable) | {
+        p for p in pids
+        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
+    }
+    for p in pids:
+        if p not in mountain_related_b:
+            prob += mtn[p] == 0
+
     # ホテル大型車には大型免許持ちのドライバーが必要。
     # ホテル大型車の台数 ≤ ホテル組に残る大型免許持ちの人数 を保証する。
     # 等価: sum(mtn_car[large_k]) - sum(mtn[large_capable_p]) >= len(large_rented) - len(large_capable)
@@ -527,9 +545,16 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
             prob += v >= mtn_car[k] - usedcar[(k, s)]
             b_park_vars.append(v)
 
+    priority_run_vars_b = [
+        runs[(p, s)]
+        for (p, s) in runs
+        if participants[p].priority_sections[s - 1]
+    ]
+
     prob += (
         0.1 * pulp.lpSum(mtn_car.values())  # 山行きに使う車はできるだけ少なく
         - W_RUNNER_PREF * pulp.lpSum(runs.values())
+        - W_PRIORITY_RUN * pulp.lpSum(priority_run_vars_b)
         + W_PREV_RUN_DRIVE * pulp.lpSum(prev_run_drive_b_vars)
         + W_NO_PASSENGER * pulp.lpSum(b_no_passenger_vars)
         + W_NO_GRADE2 * pulp.lpSum(b_no_grade2_vars)
@@ -607,7 +632,6 @@ def _assign_hotel_group(ctx_b, participants, ran_section_8: set = None) -> List[
         for k in hotel_cars
         if participants[p].can_drive
         and not (CAR_TYPE[k] == "large" and not participants[p].can_drive_large)
-        and p not in (ran_section_8 or set())
     }
     if not drive:
         print("  ⚠️ ホテルグループに運転できる人がいないため、ホテル組の配車をスキップします。")

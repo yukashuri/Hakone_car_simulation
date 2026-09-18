@@ -13,6 +13,7 @@ class Participant:
     grade: int
     remaining_sections: int = 0
     leaves_after_section: Optional[int] = None  # 日帰りの人がこの区間まで参加して離脱する(Noneなら最後まで参加)
+    priority_sections: List[bool] = field(default_factory=lambda: [False] * 10)  # 特に走りたい区間
 
 @dataclass
 class CarState:
