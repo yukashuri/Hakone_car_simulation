@@ -9,9 +9,11 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Streamlit Cloud のホットリロード時にモジュールキャッシュが残るため明示的に再ロードする
-# car_pool を先にリロードしないと milp_allocator が古い定数（定員など）を参照してしまう
+# models → car_pool → milp_allocator の順にリロードしないと古い定義が残る
+import models as _models_mod
 import logic.car_pool as _car_pool_mod
 import logic.milp_allocator as _milp_mod
+importlib.reload(_models_mod)
 importlib.reload(_car_pool_mod)
 importlib.reload(_milp_mod)
 
