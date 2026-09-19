@@ -411,11 +411,14 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
     mtn = {p: model.NewBoolVar(f"mtn_{p}") for p in pids}
     mtn_car = {k: model.NewBoolVar(f"mtncar_{k}") for k in rented_cars}
 
-    # 山行き希望者は必ず山グループ、それ以外は必ずホテルグループに固定
+    # 山行き希望者は必ず山グループに固定。
+    # 山道免許持ちは運転手として山に行く可能性があるため自由変数のまま。
+    # それ以外（希望なし・免許なし）は必ずホテルグループに固定。
+    mountain_capable_set = set(mountain_capable)
     for p in pids:
         if p in mountain_hopefuls_b:
             model.Add(mtn[p] == 1)
-        else:
+        elif p not in mountain_capable_set:
             model.Add(mtn[p] == 0)
 
     remaining_budget = {p: max(participants[p].remaining_sections - runs_used_in_a.get(p, 0), 0) for p in pids}
