@@ -401,10 +401,22 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
     if wants_mountain and not mountain_capable:
         raise RuntimeError("山道運転可の参加者が見つかりません。9・10区の山行き車を運転できる人を少なくとも1人登録してください。")
 
+    mountain_hopefuls_b = {
+        p for p in pids
+        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
+    }
+
     model = cp_model.CpModel()
 
     mtn = {p: model.NewBoolVar(f"mtn_{p}") for p in pids}
     mtn_car = {k: model.NewBoolVar(f"mtncar_{k}") for k in rented_cars}
+
+    # 山行き希望者は必ず山グループ、それ以外は必ずホテルグループに固定
+    for p in pids:
+        if p in mountain_hopefuls_b:
+            model.Add(mtn[p] == 1)
+        else:
+            model.Add(mtn[p] == 0)
 
     remaining_budget = {p: max(participants[p].remaining_sections - runs_used_in_a.get(p, 0), 0) for p in pids}
 
