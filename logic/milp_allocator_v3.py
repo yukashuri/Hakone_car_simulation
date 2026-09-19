@@ -224,43 +224,13 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
         if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
     ]
     mountain_group = set(mountain_hopefuls)
-    non_mountain_strict = [p for p in pids if p not in mountain_group]
 
     is_mtn_car = {(k, s): model.NewBoolVar(f"is_mtn_car_{k}_{s}") for k in car_ids for s in (7, 8)}
 
-    # 6区: 「5区を走った(runs)かつ6区で車kにいる(occ)人」と山行き希望者の同乗を禁止 (AND条件)。
-    # 山行き希望者自身が5区を走った本人である場合はこの制約から除外する(自分自身との同乗を
-    # 禁止する形になり、5区を走ったあと6区でどの車にも乗れず、6区を走る予定もない場合に
-    # Block A全体がINFEASIBLEになるバグがあったため)。
-    sec5_runners = [p for p in pids if (p, 5) in runs]
-    for k in car_ids:
-        for p_mtn in mountain_hopefuls:
-            occ_val2 = occ.get((p_mtn, k, 6))
-            if occ_val2 is None:
-                continue
-            run5_at6_vars = []
-            for p_run in sec5_runners:
-                if p_run == p_mtn:
-                    continue
-                occ_val = occ.get((p_run, k, 6))
-                if occ_val is None:
-                    continue
-                v = model.NewBoolVar(f"run5at6_{p_run}_{k}_{p_mtn}")
-                model.Add(v <= occ_val)
-                model.Add(v <= runs[(p_run, 5)])
-                model.Add(v >= occ_val + runs[(p_run, 5)] - 1)
-                run5_at6_vars.append(v)
-            if not run5_at6_vars:
-                continue
-            has_other_run5 = model.NewBoolVar(f"has_other_run5_{k}_{p_mtn}")
-            for v in run5_at6_vars:
-                model.Add(has_other_run5 >= v)
-            model.Add(occ_val2 + has_other_run5 <= 1)
-
     # 7〜8区: 運転手 or 同乗者に山組が一人でもいたら、その車は山フラグが立つ
-    # (occで判定=運転手も含む)。山フラグが立った車には非山組は同乗できない。
-    # ただし「7区を走った山組メンバー」は例外: 7区を走ったあとは山行き車ではなく
-    # ホテル組の車に回収されるため、8区での山フラグ強制を緩和する。
+    # (occで判定=運転手も含む)。非山組の同乗は許可する。
+    # ただし「7区を走った山組メンバー」は例外: 7区を走ったあとはホテル車にも
+    # 乗れるよう8区での山フラグ強制を緩和する。
     for s in [7, 8]:
         for k in car_ids:
             for p_mtn in mountain_group:
@@ -272,9 +242,6 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
                     model.Add(mtn_val <= is_mtn_car[(k, s)] + runs[(p_mtn, 7)])
                 else:
                     model.Add(mtn_val <= is_mtn_car[(k, s)])
-            for p_other in non_mountain_strict:
-                if (p_other, k, s) in ride:
-                    model.Add(ride[(p_other, k, s)] + is_mtn_car[(k, s)] <= 1)
 
     for k in car_ids:
         model.Add(is_mtn_car[(k, 7)] == is_mtn_car[(k, 8)])
