@@ -259,11 +259,18 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
 
     # 7〜8区: 運転手 or 同乗者に山組が一人でもいたら、その車は山フラグが立つ
     # (occで判定=運転手も含む)。山フラグが立った車には非山組は同乗できない。
+    # ただし「7区を走った山組メンバー」は例外: 7区を走ったあとは山行き車ではなく
+    # ホテル組の車に回収されるため、8区での山フラグ強制を緩和する。
     for s in [7, 8]:
         for k in car_ids:
             for p_mtn in mountain_group:
                 mtn_val = occ.get((p_mtn, k, s))
-                if mtn_val is not None:
+                if mtn_val is None:
+                    continue
+                if s == 8 and (p_mtn, 7) in runs:
+                    # 7区を走った場合は8区でホテル車に乗れるよう緩和
+                    model.Add(mtn_val <= is_mtn_car[(k, s)] + runs[(p_mtn, 7)])
+                else:
                     model.Add(mtn_val <= is_mtn_car[(k, s)])
             for p_other in non_mountain_strict:
                 if (p_other, k, s) in ride:
@@ -271,15 +278,6 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
 
     for k in car_ids:
         model.Add(is_mtn_car[(k, 7)] == is_mtn_car[(k, 8)])
-
-    # 7区のランナーは、山組であっても8区で山フラグ付きの車には回収されない
-    # (ride + is_mtn_car + runs(7区) <= 2 : 7区を走った かつ その車が山フラグ付き、の
-    #  両方が成立するときだけ ride を0に強制する)
-    for k in car_ids:
-        for p in pids:
-            if (p, 7) not in runs or (p, k, 8) not in ride:
-                continue
-            model.Add(ride[(p, k, 8)] + is_mtn_car[(k, 8)] + runs[(p, 7)] <= 2)
 
     # 山フラグが立った車の運転手は山道免許必須（ハード制約）
     for s in [7, 8]:
@@ -300,7 +298,14 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
             # 他の同種ガード(adv_car_vars, match_vars)と同じくorにする。
             if occ7 is None or occ8 is None:
                 continue
-            model.Add(occ7 == occ8)
+            if (p, 7) not in runs:
+                # 7区走行オプションなし → 必ず同じ車に乗り続ける
+                model.Add(occ7 == occ8)
+            else:
+                # 7区を走った場合はホテル車に回収されるため8区で車を変えてよい。
+                # 走らなかった場合(runs[(p,7)]=0)は occ7==occ8 と同値になる。
+                model.Add(occ7 - occ8 <= runs[(p, 7)])
+                model.Add(occ8 - occ7 <= runs[(p, 7)])
 
     prev_run_drive_vars = []
     for i in range(len(sections) - 1):
