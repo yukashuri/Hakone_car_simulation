@@ -44,9 +44,9 @@ def _int_or(val, default: int) -> int:
     return int(s) if s else default
 
 
-def _find_col(headers: List[str], keyword: str) -> str:
-    """キーワードを含む列名を返す。見つからなければ空文字。"""
-    return next((h for h in headers if keyword in h), "")
+def _find_col(headers: List[str], keyword: str, exclude: str = "") -> str:
+    """キーワードを含む列名を返す。見つからなければ空文字。excludeを含む列は除外する。"""
+    return next((h for h in headers if keyword in h and (not exclude or exclude not in h)), "")
 
 
 def load_participants_from_sheet(url: str, credentials_path: str = CREDENTIALS_DEFAULT) -> Dict[str, Participant]:
@@ -93,14 +93,14 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
     headers = all_values[0]
     col_name     = _find_col(headers, "名前")       # "名前" は "お名前" にも "名前" にもマッチ
     col_grade    = _find_col(headers, "学年")
-    col_sections = _find_col(headers, "走りたい区間")
-    col_priority = _find_col(headers, "特に走りたい")
+    col_sections = _find_col(headers, "走りたい区間", exclude="特に")
     col_count    = _find_col(headers, "何区間")
     col_drive    = _find_col(headers, "普通自動車")
     col_large    = _find_col(headers, "大型")
     col_mountain = _find_col(headers, "山道")
     col_stay     = _find_col(headers, "宿泊")
     col_leave    = _find_col(headers, "帰りますか")
+    col_priority = _find_col(headers, "特に走りたい")
 
     participants = {}
     p_index = 0
@@ -115,29 +115,35 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
         def yes(col: str) -> bool:
             return get(col).startswith("はい")
 
-        def _parse_sections(raw: str) -> list:
-            result = [False] * 10
-            for item in re.split(r'[,、・/\s　]+', raw):
+        # 走りたい区間: カンマ・読点・中黒・スラッシュ・スペース（全角含む）など複数の区切り文字に対応
+        def parse_sections(text: str) -> List[bool]:
+            flags = [False] * 10
+            for item in re.split(r'[,、・/\s　]+', text):
                 item = item.strip().replace("区", "")
                 if item.isdigit():
                     idx = int(item) - 1
                     if 0 <= idx < 10:
-                        result[idx] = True
-            return result
+                        flags[idx] = True
+            return flags
 
-        # 走りたい区間: カンマ・読点・中黒・スラッシュ・スペース（全角含む）など複数の区切り文字に対応
-        preferred = _parse_sections(get(col_sections))
-        # 特に走りたい区間（「特になし」等の文字列は数字が含まれないので自然に空になる）
-        priority = _parse_sections(get(col_priority)) if col_priority else [False] * 10
+        preferred = parse_sections(get(col_sections))
+        priority = parse_sections(get(col_priority)) if col_priority else [False] * 10
 
         grade_match = re.match(r"(\d+)", get(col_grade))
         grade = int(grade_match.group(1)) if grade_match else 1
 
-        count_str = get(col_count).replace(".0", "")
+        count_str = get(col_count)
         remaining = int(count_str) if count_str.isdigit() else preferred.count(True)
 
-        leave_str = get(col_leave).replace("区", "").replace(".0", "")
-        leaves_after = int(leave_str) if leave_str.isdigit() else None
+        leave_str = get(col_leave).replace("区", "")
+        if leave_str.isdigit():
+            leaves_after = int(leave_str)
+        elif not yes(col_stay):
+            # 日帰りだが「何区の後に帰るか」が未記入 -> 希望区間のうち最後の区間の後に帰るとみなす
+            preferred_indices = [i for i, v in enumerate(preferred) if v]
+            leaves_after = (preferred_indices[-1] + 1) if preferred_indices else None
+        else:
+            leaves_after = None
 
         is_large    = yes(col_large)
         is_mountain = yes(col_mountain)
@@ -167,6 +173,33 @@ def load_participants_from_form_sheet(url: str, credentials_path: str = CREDENTI
 
 
 RESULT_SHEET_NAME = "配車結果"
+INPUT_SHEET_NAME = "入力データ"
+
+INPUT_HEADER = ["名前", "学年", "宿泊", "運転", "大", "山",
+                "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                "希望区間数", "離脱区間", "特に走りたい区間"]
+
+
+def _participant_row(p: Participant) -> List[str]:
+    return [
+        p.name,
+        str(p.grade),
+        "1" if p.leaves_after_section is None else "0",
+        "1" if p.can_drive else "0",
+        "1" if p.can_drive_large else "0",
+        "1" if p.can_drive_mountain else "0",
+        *["1" if v else "" for v in p.preferred_sections],
+        str(p.remaining_sections),
+        "" if p.leaves_after_section is None else str(p.leaves_after_section),
+        ", ".join(f"{i+1}区" for i, v in enumerate(p.priority_sections) if v),
+    ]
+
+
+def _replace_worksheet(spreadsheet, title: str, rows: int, cols: int):
+    existing = next((ws for ws in spreadsheet.worksheets() if ws.title == title), None)
+    if existing:
+        spreadsheet.del_worksheet(existing)
+    return spreadsheet.add_worksheet(title=title, rows=rows, cols=cols)
 
 
 def save_plan_to_sheet(
@@ -175,15 +208,18 @@ def save_plan_to_sheet(
     url: str,
     credentials_path: str = CREDENTIALS_DEFAULT,
 ) -> str:
+    """配車結果を「配車結果」シートに、計算に使った入力データを「入力データ」シートに書き出す。
+    どちらも既存シートがあれば削除して作り直す(元コードと同じ挙動)。"""
     gc = _client(credentials_path)
     spreadsheet = gc.open_by_key(_sheet_id_from_url(url))
 
-    # 既存の「配車結果」シートがあれば削除して作り直す
-    existing = next((ws for ws in spreadsheet.worksheets() if ws.title == RESULT_SHEET_NAME), None)
-    if existing:
-        spreadsheet.del_worksheet(existing)
-    sheet = spreadsheet.add_worksheet(title=RESULT_SHEET_NAME, rows=500, cols=7)
+    # 入力データシート: この結果を計算した時点の参加者データをそのまま書き出す
+    input_sheet = _replace_worksheet(spreadsheet, INPUT_SHEET_NAME, rows=len(participants) + 5, cols=len(INPUT_HEADER))
+    input_rows = [INPUT_HEADER] + [_participant_row(p) for p in participants.values()]
+    input_sheet.update(input_rows, "A1")
 
+    # 配車結果シート
+    sheet = _replace_worksheet(spreadsheet, RESULT_SHEET_NAME, rows=500, cols=7)
     rows = [["区間", "ランナー", "車ID", "車種", "山行き", "先行", "運転手", "同乗者"]]
     for section in plan:
         runners = ", ".join(participants[pid].name for pid in section.runner_ids if pid in participants)

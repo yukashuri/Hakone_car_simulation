@@ -1,6 +1,12 @@
 from typing import Dict, List, Tuple
 from models import Participant, SectionState
-from logic.car_pool import MOUNTAIN_SECTIONS, LARGE_CAPACITY, NORMAL_CAPACITY
+from logic.car_pool import MOUNTAIN_SECTIONS, LARGE_CAPACITY, NORMAL_CAPACITY, section_label
+
+
+def _name(participants: Dict[str, Participant], pid: str) -> str:
+    """participants に存在しないid(NO_DRIVER等)でも安全に名前文字列を返す。"""
+    p = participants.get(pid)
+    return p.name if p else "unknown"
 
 
 def validate_participants(participants: Dict[str, Participant]) -> List[str]:
@@ -42,6 +48,27 @@ def compute_runner_satisfaction(
     total_ran = sum(actual_runs.values())
     return len(wanted), satisfied, total_wanted, total_ran
 
+def compute_individual_summary(
+    plan: List[SectionState], participants: Dict[str, Participant]
+) -> Dict[str, Dict[str, str]]:
+    """各参加者が各区間(1〜10区・帰路)でランナー/運転手/同乗者のどれだったかをまとめる。
+    Returns: {participant_id: {区間ラベル: 役割の表示文字列}} (該当なしの区間はキー自体が無い)
+    """
+    summary: Dict[str, Dict[str, str]] = {pid: {} for pid in participants}
+    for section in plan:
+        label = section_label(section.section_id)
+        for pid in section.runner_ids:
+            if pid in summary:
+                summary[pid][label] = "🏃 ランナー"
+        for car in section.cars:
+            if car.driver_id in summary:
+                summary[car.driver_id][label] = f"🚘 運転手({car.car_id})"
+            for pid in car.passenger_ids:
+                if pid in summary:
+                    summary[pid][label] = f"👥 同乗者({car.car_id})"
+    return summary
+
+
 def validate_section(state: SectionState, participants: Dict[str, Participant]) -> List[str]:
     errors = []
     all_runners = set(state.runner_ids)
@@ -75,10 +102,13 @@ def validate_section(state: SectionState, participants: Dict[str, Participant]) 
                 name = participants[pid].name if pid in participants else pid
                 errors.append(f"車{car.car_id}の同乗者{name}は同時にランナーです")
 
-        if len(car.passenger_ids) == 0: errors.append(f"車{car.car_id}に同乗者なし")
-        else:
-            if not any(participants[pid].grade >= 2 for pid in car.passenger_ids if pid in participants):
-                errors.append(f"車{car.car_id}に2年生以上なし")
+        # 8区はソルバー側も「同乗者なし」「2年生以上なし」のペナルティを課していない
+        # (次区間へ向かう先行車が単独になり得るため)。ここも合わせて対象外にする。
+        if state.section_id != 8:
+            if len(car.passenger_ids) == 0: errors.append(f"車{car.car_id}に同乗者なし")
+            else:
+                if not any(participants[pid].grade >= 2 for pid in car.passenger_ids if pid in participants):
+                    errors.append(f"車{car.car_id}に2年生以上なし")
 
     driver_list = [car.driver_id for car in state.cars]
     for d_id in set(driver_list):
@@ -116,8 +146,8 @@ def validate_transitions(sections: List[SectionState], participants: Dict[str, P
             if car_id in prev_mt_drivers and prev_mt_drivers[car_id] != driver_id:
                 errors.append(
                     f"{s_id - 1}区→{s_id}区: 山行き車両{car_id}のドライバーが"
-                    f"{participants.get(prev_mt_drivers[car_id], 'unknown').name}から"
-                    f"{participants.get(driver_id, 'unknown').name}に変わっています"
+                    f"{_name(participants, prev_mt_drivers[car_id])}から"
+                    f"{_name(participants, driver_id)}に変わっています"
                 )
 
     return errors
