@@ -105,8 +105,7 @@ def load_from_xlsx(path):
 
 def main():
     xlsx = sys.argv[1] if len(sys.argv) > 1 else "箱根企画_シュミレーション　田村用 のコピー.xlsx"
-    mountain_depart_after = int(sys.argv[2]) if len(sys.argv) > 2 else 8
-    print(f"=== テスト実行: {xlsx}  山出発: {mountain_depart_after}区後 ===\n")
+    print(f"=== テスト実行: {xlsx} ===\n")
 
     participants = load_from_xlsx(xlsx)
     print(f"参加者 {len(participants)} 名を読み込みました\n")
@@ -120,7 +119,7 @@ def main():
         print()
 
     # MILP実行
-    plan = generate_full_plan_milp(participants, mountain_depart_after=mountain_depart_after)
+    plan = generate_full_plan_milp(participants)
 
     # 結果表示
     print("\n==================================================")

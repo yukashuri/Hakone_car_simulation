@@ -224,27 +224,62 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
         if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
     ]
     mountain_group = set(mountain_hopefuls)
+    non_mountain_strict = [p for p in pids if p not in mountain_group]
 
     is_mtn_car = {(k, s): model.NewBoolVar(f"is_mtn_car_{k}_{s}") for k in car_ids for s in (7, 8)}
 
+    # 6区: 「5区を走った(runs)かつ6区で車kにいる(occ)人」と山行き希望者の同乗を禁止 (AND条件)。
+    # 山行き希望者自身が5区を走った本人である場合はこの制約から除外する(自分自身との同乗を
+    # 禁止する形になり、5区を走ったあと6区でどの車にも乗れず、6区を走る予定もない場合に
+    # Block A全体がINFEASIBLEになるバグがあったため)。
+    sec5_runners = [p for p in pids if (p, 5) in runs]
+    for k in car_ids:
+        for p_mtn in mountain_hopefuls:
+            occ_val2 = occ.get((p_mtn, k, 6))
+            if occ_val2 is None:
+                continue
+            run5_at6_vars = []
+            for p_run in sec5_runners:
+                if p_run == p_mtn:
+                    continue
+                occ_val = occ.get((p_run, k, 6))
+                if occ_val is None:
+                    continue
+                v = model.NewBoolVar(f"run5at6_{p_run}_{k}_{p_mtn}")
+                model.Add(v <= occ_val)
+                model.Add(v <= runs[(p_run, 5)])
+                model.Add(v >= occ_val + runs[(p_run, 5)] - 1)
+                run5_at6_vars.append(v)
+            if not run5_at6_vars:
+                continue
+            has_other_run5 = model.NewBoolVar(f"has_other_run5_{k}_{p_mtn}")
+            for v in run5_at6_vars:
+                model.Add(has_other_run5 >= v)
+            model.Add(occ_val2 + has_other_run5 <= 1)
+
     # 7〜8区: 運転手 or 同乗者に山組が一人でもいたら、その車は山フラグが立つ
-    # (occで判定=運転手も含む)。非山組の同乗は許可する。
-    # ただし「7区を走った山組メンバー」は例外: 7区を走ったあとはホテル車にも
-    # 乗れるよう8区での山フラグ強制を緩和する。
+    # (occで判定=運転手も含む)。山フラグが立った車には非山組は同乗できない。
     for s in [7, 8]:
         for k in car_ids:
             for p_mtn in mountain_group:
                 mtn_val = occ.get((p_mtn, k, s))
-                if mtn_val is None:
-                    continue
-                if s == 8 and (p_mtn, 7) in runs:
-                    # 7区を走った場合は8区でホテル車に乗れるよう緩和
-                    model.Add(mtn_val <= is_mtn_car[(k, s)] + runs[(p_mtn, 7)])
-                else:
+                if mtn_val is not None:
                     model.Add(mtn_val <= is_mtn_car[(k, s)])
+            for p_other in non_mountain_strict:
+                if (p_other, k, s) in ride:
+                    model.Add(ride[(p_other, k, s)] + is_mtn_car[(k, s)] <= 1)
 
     for k in car_ids:
         model.Add(is_mtn_car[(k, 7)] == is_mtn_car[(k, 8)])
+
+    # 7区のランナーは、山組であっても8区で山フラグ付きの車には回収されない
+    # (ride + is_mtn_car + runs(7区) <= 2 : 7区を走った かつ その車が山フラグ付き、の
+    #  両方が成立するときだけ ride を0に強制する)
+    for k in car_ids:
+        for p in pids:
+            if (p, 7) not in runs or (p, k, 8) not in ride:
+                continue
+            model.Add(ride[(p, k, 8)] + is_mtn_car[(k, 8)] + runs[(p, 7)] <= 2)
 
     # 山フラグが立った車の運転手は山道免許必須（ハード制約）
     for s in [7, 8]:
@@ -265,14 +300,7 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
             # 他の同種ガード(adv_car_vars, match_vars)と同じくorにする。
             if occ7 is None or occ8 is None:
                 continue
-            if (p, 7) not in runs:
-                # 7区走行オプションなし → 必ず同じ車に乗り続ける
-                model.Add(occ7 == occ8)
-            else:
-                # 7区を走った場合はホテル車に回収されるため8区で車を変えてよい。
-                # 走らなかった場合(runs[(p,7)]=0)は occ7==occ8 と同値になる。
-                model.Add(occ7 - occ8 <= runs[(p, 7)])
-                model.Add(occ8 - occ7 <= runs[(p, 7)])
+            model.Add(occ7 == occ8)
 
     prev_run_drive_vars = []
     for i in range(len(sections) - 1):
@@ -401,23 +429,10 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
     if wants_mountain and not mountain_capable:
         raise RuntimeError("山道運転可の参加者が見つかりません。9・10区の山行き車を運転できる人を少なくとも1人登録してください。")
 
-    mountain_hopefuls_b = {
-        p for p in pids
-        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
-    }
-
     model = cp_model.CpModel()
 
     mtn = {p: model.NewBoolVar(f"mtn_{p}") for p in pids}
     mtn_car = {k: model.NewBoolVar(f"mtncar_{k}") for k in rented_cars}
-
-    # 山道免許なし・9/10区希望なし の人は必ずホテルグループに固定。
-    # 山行き希望者は目的関数(W_NO_RUN/W_RUNNER_PREF)で山グループに誘導する。
-    # 山道免許持ちは運転手として山に行く可能性があるため自由変数のまま。
-    mountain_capable_set = set(mountain_capable)
-    for p in pids:
-        if p not in mountain_hopefuls_b and p not in mountain_capable_set:
-            model.Add(mtn[p] == 0)
 
     remaining_budget = {p: max(participants[p].remaining_sections - runs_used_in_a.get(p, 0), 0) for p in pids}
 
