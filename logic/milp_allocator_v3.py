@@ -452,6 +452,17 @@ def _build_block_b(participants: Dict[str, Participant], rent_solution: Dict[str
     if wants_mountain and not mountain_capable:
         raise RuntimeError("山道運転可の参加者が見つかりません。9・10区の山行き車を運転できる人を少なくとも1人登録してください。")
 
+    mountain_hopefuls_b = [
+        p for p in pids
+        if participants[p].preferred_sections[8] or participants[p].preferred_sections[9]
+    ]
+    total_rented_cap_diag = sum(CAR_CAPACITY[k] for k in rented_cars)
+    forced_mtn_cars = len(section8_mountain_drivers or {})
+    forced_mtn_cap = sum(CAR_CAPACITY[k] for k in (section8_mountain_drivers or {}) if k in rented_cars)
+    print(f"  [Block B診断] 宿泊者={len(pids)}人 / 車定員合計={total_rented_cap_diag}人")
+    print(f"  [Block B診断] 山行き希望={len(mountain_hopefuls_b)}人 / 山道免許={len(mountain_capable)}人")
+    print(f"  [Block B診断] 8区引き継ぎ山行き車={forced_mtn_cars}台(定員{forced_mtn_cap}人) / 残りホテル車定員={(total_rented_cap_diag - forced_mtn_cap)}人")
+
     model = cp_model.CpModel()
 
     mtn = {p: model.NewBoolVar(f"mtn_{p}") for p in pids}
