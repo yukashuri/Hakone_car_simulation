@@ -37,6 +37,7 @@ from data_io.output_writer import write_plan_xlsx
 
 W_FLEET = 5000
 W_CONTINUITY = 5
+W_SKIP = 50  # 車のメンバーが丸ごと変わらない区間遷移（スキップ可能）へのボーナス
 W_RUNNER_PREF = 50
 W_PRIORITY_RUNNER_PREF = 150  # 「特に走りたい区間」を実際に走れた場合の追加ボーナス(W_RUNNER_PREFに上乗せ)
 W_MTN_RUNNER_DRIVE = 500
@@ -337,6 +338,27 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
                 model.Add(m <= occ_cur)
                 match_vars.append(m)
 
+    # 車のメンバーが丸ごと変わらない区間遷移（スキップ可能）: 全乗員の occ が前後で一致するとき1になる。
+    # skip=1 → 各人について occ[s] == occ[s+1] を強制（occ が片方 None の場合は乗車=0 を強制）。
+    skip_vars = []
+    for i in range(len(sections) - 1):
+        s_prev, s_next = sections[i], sections[i + 1]
+        for k in car_ids:
+            skip = model.NewBoolVar(f"skip_{k}_{s_prev}_{s_next}")
+            for p in pids:
+                occ_prev = occ.get((p, k, s_prev))
+                occ_next = occ.get((p, k, s_next))
+                if occ_prev is None and occ_next is None:
+                    continue
+                elif occ_prev is None:
+                    model.Add(occ_next <= 1 - skip)
+                elif occ_next is None:
+                    model.Add(occ_prev <= 1 - skip)
+                else:
+                    model.Add(occ_prev - occ_next <= 1 - skip)
+                    model.Add(occ_next - occ_prev <= 1 - skip)
+            skip_vars.append(skip)
+
     # 「特に走りたい区間」を実際に走れた場合、通常の希望区間ボーナスに加えて追加ボーナスを与える
     priority_run_vars = [
         v for (p, s), v in runs.items()
@@ -346,6 +368,7 @@ def _build_block_a(participants: Dict[str, Participant], car_ids: List[str],
     model.Minimize(
         W_FLEET * sum(CAR_COST[k] * rent[k] for k in car_ids)
         - W_CONTINUITY * sum(match_vars)
+        - W_SKIP * sum(skip_vars)
         - W_RUNNER_PREF * sum(runs.values())
         - W_PRIORITY_RUNNER_PREF * sum(priority_run_vars)
         + W_MTN_RUNNER_DRIVE * sum(mtn_runner_drive_vars)
